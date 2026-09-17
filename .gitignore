@@ -1,3 +1,4 @@
 .env
-temp_script.py
 __pycache__/
+*.pyc
+temp_script.py

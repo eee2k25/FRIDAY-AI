@@ -1,0 +1,7 @@
+python-dotenv
+groq
+pyautogui
+sounddevice
+scipy
+pyttsx3
+Pillow
