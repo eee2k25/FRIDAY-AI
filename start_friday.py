@@ -1,4 +1,4 @@
-"""FRIDAY first-run launcher. Asks for Groq key if missing, then starts friday.py."""
+"""FRIDAY launcher: Groq key wizard, then CLI or GUI."""
 from __future__ import annotations
 
 import os
@@ -12,12 +12,13 @@ sys.path.insert(0, str(ROOT))
 
 ENV_FILE = ROOT / ".env"
 KEY_NAME = "GROQ_API_KEY"
-CHAT = ROOT / "friday.py"
 GROQ_KEYS = "https://console.groq.com/keys"
+
 
 def _load_env() -> None:
     try:
         from dotenv import load_dotenv
+
         load_dotenv(ENV_FILE)
     except Exception:
         if ENV_FILE.exists():
@@ -28,16 +29,16 @@ def _load_env() -> None:
                 k, _, v = line.partition("=")
                 os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
+
 def _key_ok(k: str | None) -> bool:
     if not k:
         return False
     k = k.strip().strip('"').strip("'")
     return k.startswith("gsk_") and len(k) > 20
 
+
 def _upsert_env(api_key: str) -> None:
-    lines: list[str] = []
-    if ENV_FILE.exists():
-        lines = ENV_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
+    lines = ENV_FILE.read_text(encoding="utf-8", errors="ignore").splitlines() if ENV_FILE.exists() else []
     out, found = [], False
     for line in lines:
         if line.strip().startswith(KEY_NAME + "="):
@@ -51,31 +52,27 @@ def _upsert_env(api_key: str) -> None:
         out.append(f"{KEY_NAME}={api_key}")
     ENV_FILE.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 
+
 def ask_for_key() -> None:
     print("=" * 60)
     print("  FRIDAY  —  first-time setup")
     print("=" * 60)
     print()
-    print("  This app needs a FREE Groq API key (yours, not shared).")
-    print()
-    print("  How to get one:")
+    print("  Need a FREE Groq API key (yours, not shared).")
     print("    1. Open  " + GROQ_KEYS)
-    print("    2. Sign in")
-    print("    3. Create API Key")
-    print("    4. Copy it  (starts with gsk_ ...)")
-    print()
-    print("  Saved only on THIS PC in .env  —  never uploaded to GitHub.")
+    print("    2. Sign in → Create API Key")
+    print("    3. Copy it (starts with gsk_)")
+    print("  Saved only on THIS PC in .env")
     print()
     try:
         import webbrowser
+
         webbrowser.open(GROQ_KEYS)
-        print("  (Opened the key page in your browser.)")
-        print()
     except Exception:
         pass
     while True:
         try:
-            key = input("  Paste your Groq key here, then Enter:\n  > ").strip()
+            key = input("  Paste your Groq key, then Enter:\n  > ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nCancelled.")
             sys.exit(1)
@@ -87,15 +84,19 @@ def ask_for_key() -> None:
             return
         print("\n  That does not look like a Groq key (should start with gsk_).\n")
 
+
 def main() -> None:
-    if not CHAT.exists():
-        print("friday.py not found in", ROOT)
-        input("Press Enter to exit...")
-        sys.exit(1)
     _load_env()
     if not _key_ok(os.getenv(KEY_NAME, "")):
         ask_for_key()
-    runpy.run_path(str(CHAT), run_name="__main__")
+    gui = "--gui" in sys.argv
+    target = ROOT / ("gui.py" if gui else "friday.py")
+    if not target.exists():
+        print(target.name, "not found in", ROOT)
+        input("Press Enter to exit...")
+        sys.exit(1)
+    runpy.run_path(str(target), run_name="__main__")
+
 
 if __name__ == "__main__":
     try:

@@ -5,3 +5,4 @@ sounddevice
 scipy
 pyttsx3
 Pillow
+numpy

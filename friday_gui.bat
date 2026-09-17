@@ -1,5 +1,5 @@
 @echo off
-title FRIDAY
+title FRIDAY GUI
 cd /d "%~dp0"
 where python >nul 2>&1
 if errorlevel 1 (
@@ -10,5 +10,5 @@ if errorlevel 1 (
   exit /b 1
 )
 python -m pip install -q python-dotenv groq pyautogui sounddevice scipy pyttsx3 Pillow numpy
-python start_friday.py
+python start_friday.py --gui
 if errorlevel 1 pause
