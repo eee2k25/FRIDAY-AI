@@ -1,0 +1,20 @@
+{
+  "name": "FRIDAY - MARVEL AI Suite",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "postCreateCommand": "pip install -r requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  // Forward no ports needed - FRIDAY is terminal only. Codespaces terminal is your chat.
+  "remoteEnv": {
+    "PYTHONUNBUFFERED": "1"
+  }
+}
