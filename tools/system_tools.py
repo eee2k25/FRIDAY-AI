@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config
+from core.safety import guard
 
 
 def _format_result(proc: subprocess.CompletedProcess, extra: str = "") -> str:
@@ -35,6 +36,7 @@ def _format_result(proc: subprocess.CompletedProcess, extra: str = "") -> str:
 
 def run_command(command: str, timeout: int = 30) -> str:
     """Run a shell command (cmd.exe on Windows) and return stdout/stderr/exit code."""
+    guard(command)
     try:
         proc = subprocess.run(
             command,
@@ -46,9 +48,9 @@ def run_command(command: str, timeout: int = 30) -> str:
             errors="replace",
         )
     except subprocess.TimeoutExpired:
-        raise TimeoutError(f"command timed out after {timeout}s: {command[:80]}")
+        raise TimeoutError(f"command timed out after {timeout}s: {command[:80]}") from None
     except OSError as e:
-        raise RuntimeError(f"could not run command: {e}")
+        raise RuntimeError(f"could not run command: {e}") from e
     return _format_result(proc)
 
 
@@ -65,12 +67,13 @@ def run_python_script(script_path: str, args: str = "") -> str:
             cmd, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace"
         )
     except subprocess.TimeoutExpired:
-        raise TimeoutError(f"script timed out after 60s: {p.name}")
+        raise TimeoutError(f"script timed out after 60s: {p.name}") from None
     return _format_result(proc)
 
 
 def run_python_code(code: str) -> str:
     """Execute a Python code string in a fresh subprocess (not exec) with a 30s timeout."""
+    guard(code)
     tmp_dir = Path(tempfile.mkdtemp(prefix="friday_"))
     tmp = tmp_dir / "snippet.py"
     tmp.write_text(code, encoding="utf-8")
@@ -84,7 +87,7 @@ def run_python_code(code: str) -> str:
             errors="replace",
         )
     except subprocess.TimeoutExpired:
-        raise TimeoutError("code execution timed out after 30s")
+        raise TimeoutError("code execution timed out after 30s") from None
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     return _format_result(proc, extra=f"[source saved at {tmp} for inspection]")
@@ -98,6 +101,7 @@ def run_powershell(command: str, timeout: int = 60) -> str:
     Notes: separate statements with ';' (PowerShell has no &&), wrap paths in
     double quotes, and remember $ variables are expanded by PowerShell.
     """
+    guard(command)
     ps = shutil.which("pwsh") or ("powershell.exe" if os.name == "nt" else None)
     if ps is None:
         raise RuntimeError("PowerShell not found on this system")
@@ -111,9 +115,9 @@ def run_powershell(command: str, timeout: int = 60) -> str:
             errors="replace",
         )
     except subprocess.TimeoutExpired:
-        raise TimeoutError(f"PowerShell command timed out after {timeout}s: {command[:80]}")
+        raise TimeoutError(f"PowerShell command timed out after {timeout}s: {command[:80]}") from None
     except OSError as e:
-        raise RuntimeError(f"could not run PowerShell: {e}")
+        raise RuntimeError(f"could not run PowerShell: {e}") from e
     if proc.returncode != 0:
         return _format_result(proc) + "\n\n[non-zero exit — read the STDERR above, fix the cause, and retry]"
     return _format_result(proc)
@@ -129,7 +133,7 @@ def check_own_logs(lines: int = 40) -> str:
         with open(p, encoding="utf-8", errors="replace") as f:
             tail = f.readlines()[-max(1, int(lines)):]
     except OSError as e:
-        raise RuntimeError(f"could not read log: {e}")
+        raise RuntimeError(f"could not read log: {e}") from e
     return "".join(tail) or "(empty log)"
 
 
@@ -161,7 +165,7 @@ def open_application(app_name: str) -> str:
         try:
             subprocess.Popen([target], shell=True)
         except OSError as e:
-            raise RuntimeError(f"could not open {app_name}: {e}")
+            raise RuntimeError(f"could not open {app_name}: {e}") from e
         return f"Opened {app_name}."
     exe = shutil.which(target)
     if exe is None:

@@ -227,9 +227,7 @@ def compare_sources(urls: str) -> str:
         except Exception as e:  # noqa: BLE001
             fetched[u] = f"[failed: {e}]"
 
-    stop = set(
-        "the a an and or of to in for is are was were be with that this on as by it from at not you your we our they he she will would".split()
-    )
+    stop = {"the", "a", "an", "and", "or", "of", "to", "in", "for", "is", "are", "was", "were", "be", "with", "that", "this", "on", "as", "by", "it", "from", "at", "not", "you", "your", "we", "our", "they", "he", "she", "will", "would"}
     reports = []
     all_counter: Counter = Counter()
     word_sets = []

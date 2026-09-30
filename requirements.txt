@@ -1,4 +1,5 @@
-# FRIDAY v1.0.1 — Python 3.10+
+# FRIDAY v1.2.0 — Python 3.10+
+# Dev extras:  pip install -e ".[dev]"
 # Install:  pip install -r requirements.txt
 
 google-genai>=1.0.0        # official Gemini SDK (successor to the deprecated google-generativeai)

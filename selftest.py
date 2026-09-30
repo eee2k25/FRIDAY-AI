@@ -41,8 +41,7 @@ class FakeEngine:
     def chat(self, messages, declarations):
         events = self.script[min(self.round, len(self.script) - 1)]
         self.round += 1
-        for e in events:
-            yield e
+        yield from events
 
     def get_model_status(self) -> dict:
         return {"active_model": "fake", "provider": "none", "chain": ["fake"], "calls": {}, "last_error": None}
@@ -188,10 +187,11 @@ def main() -> int:
 
         # ---- 4. agent loop (mock LLM, full ReAct) ------------------------
         print("\n[4/5] agent loop (ReAct with mock LLM)")
-        from core.agent_loop import AgentLoop
-
         from io import StringIO
+
         from rich.console import Console as RichConsole
+
+        from core.agent_loop import AgentLoop
 
         engine = FakeEngine(
             [

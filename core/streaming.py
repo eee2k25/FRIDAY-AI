@@ -26,7 +26,7 @@ class StreamingDisplay:
         self._live: Live | None = None
         self._buf = ""
 
-    def __enter__(self) -> "StreamingDisplay":
+    def __enter__(self) -> StreamingDisplay:
         if self.enabled and config.STREAMING:
             self._live = Live(Text(""), console=self.console, refresh_per_second=15, transient=True)
             self._live.start()

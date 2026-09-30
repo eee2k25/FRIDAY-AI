@@ -69,7 +69,7 @@ def _parse_sections(sections) -> dict:
         try:
             sections = json.loads(sections)
         except json.JSONDecodeError as e:
-            raise ValueError(f"sections must be a JSON object: {e}")
+            raise ValueError(f"sections must be a JSON object: {e}") from e
     if not isinstance(sections, dict) or not sections:
         raise ValueError("sections must be a non-empty {name: content} mapping")
     return sections
@@ -168,7 +168,7 @@ def create_excel(path: str, data: str, sheet_name: str = "Sheet1") -> str:
     try:
         rows = json.loads(data)
     except json.JSONDecodeError as e:
-        raise ValueError(f"data must be a JSON list of rows, e.g. [[\"a\",\"b\"],[1,2]]: {e}")
+        raise ValueError(f"data must be a JSON list of rows, e.g. [[\"a\",\"b\"],[1,2]]: {e}") from e
     if not isinstance(rows, list):
         raise ValueError("data must be a list of rows")
     p = _p(path)
@@ -209,7 +209,7 @@ def append_excel_row(path: str, sheet_name: str, row_data: str) -> str:
     try:
         row = json.loads(row_data)
     except json.JSONDecodeError as e:
-        raise ValueError(f"row_data must be a JSON list, e.g. [\"a\",1]: {e}")
+        raise ValueError(f"row_data must be a JSON list, e.g. [\"a\",1]: {e}") from e
     if not isinstance(row, list):
         raise ValueError("row_data must be a JSON list")
     p = _p(path)

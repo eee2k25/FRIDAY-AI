@@ -6,3 +6,9 @@ memory/*.db
 logs/*.log
 logs/tmp/
 logs/friday_code_*/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/

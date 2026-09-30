@@ -46,7 +46,6 @@ def _safe_eval_node(node: ast.AST) -> float:
 def _sympy_expr(s: str):
     """Parse a math expression with sympy, supporting implicit multiplication
     (2x → 2*x) while keeping function calls intact (sin(x) stays sin(x))."""
-    import sympy
     from sympy.parsing.sympy_parser import (
         convert_xor,
         implicit_multiplication_application,
@@ -76,7 +75,7 @@ def calculate(expression: str) -> str:
                 return f"{expression.strip()} = {val}"
             except Exception as e2:  # noqa: BLE001
                 raise RuntimeError(f"could not evaluate {expression!r}: {e} / sympy: {e2}") from e2
-        raise RuntimeError(f"could not evaluate {expression!r}: {e}")
+        raise RuntimeError(f"could not evaluate {expression!r}: {e}") from e
 
 
 def unit_convert(value: float, from_unit: str, to_unit: str) -> str:

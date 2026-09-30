@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.0
+# ⚡ F.R.I.D.A.Y. — v1.2
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -130,19 +130,73 @@ C:\MARVEL\FRIDAY\
 ├── selftest.py            ← offline smoke test (no API keys needed)
 ├── core\
 │   ├── __init__.py
-│   ├── llm_engine.py      ← Gemini + Groq adapters, streaming events, fallback chain
+│   ├── llm_engine.py      ← Gemini / Groq / OpenRouter / Together adapters + fallback chain
 │   ├── streaming.py       ← streaming display handler (live tail, final render, tool styles)
 │   ├── agent_loop.py      ← ReAct loop (THE BRAIN)
 │   ├── memory.py          ← SQLite memory (conversations/facts/tasks/tool usage)
+│   ├── tokens.py          ← context budgeting (enforces MAX_CONTEXT_TOKENS)
+│   ├── safety.py          ← destructive-shell-command guard
 │   └── tool_registry.py   ← dynamic loader + safe caller
 ├── tools\
 │   ├── __init__.py
 │   ├── file_tools.py · browser_tools.py · document_tools.py
 │   ├── system_tools.py · code_tools.py · research_tools.py
 │   ├── math_tools.py · memory_tools.py
+├── tests\                 ← pytest suite (run: pytest)
+├── pyproject.toml         ← packaging, ruff + pytest config
 ├── memory\friday_memory.db  (auto-created)
 └── logs\friday.log          (auto-created)
 ```
+
+---
+
+## Tests & linting
+
+```bash
+pip install -e ".[dev]"
+pytest              # 102 tests, no API keys and no network needed
+ruff check .        # lint
+```
+
+CI runs both on every push across Python 3.10 / 3.11 / 3.12
+(`.github/workflows/ci.yml`).
+
+---
+
+## Model providers
+
+Any model in the chain may carry a provider prefix; models whose API key is
+missing are silently skipped, so you can list more than you have keys for.
+
+| Prefix | Provider | Example |
+|---|---|---|
+| *(none)* | Google Gemini | `gemini-2.5-flash` |
+| `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
+| `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
+| `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+
+```env
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-3.3-70b-instruct
+```
+
+---
+
+## Safety
+
+FRIDAY runs real shell commands, so catastrophic ones (`rm -rf /`, `mkfs`,
+`shutdown`, `curl … | sh`, force-push, registry deletes) hit a guard first.
+Set the policy in `.env`:
+
+```env
+FRIDAY_SHELL_POLICY=confirm   # ask on the terminal (default)
+# FRIDAY_SHELL_POLICY=block   # refuse, and make her propose something safer
+# FRIDAY_SHELL_POLICY=allow   # no guard
+```
+
+A blocked command comes back to the model as a normal tool failure with the
+reason, so she reroutes instead of crashing. Everyday commands are never
+interrupted.
 
 ---
 
