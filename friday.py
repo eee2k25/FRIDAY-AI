@@ -75,6 +75,10 @@ def main() -> None:
 
     memory_tools.bind_memory(memory)
     discovery = registry.auto_discover()
+    from core.skills import SkillManager
+    registry._skill_manager = SkillManager(registry)
+    from tools import skill_tools
+    skill_tools.bind_manager(registry._skill_manager)
     agent = AgentLoop(engine, registry, memory, console=console)
 
     # 2 — startup report

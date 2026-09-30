@@ -15,6 +15,10 @@ class FridayDaemon:
         self.pid_file = Path(pid_file or os.getenv('FRIDAY_PID_FILE','friday.pid'))
         self.lock = threading.RLock(); self.memory=FridayMemory(); self.engine=LLMEngine()
         self.registry=ToolRegistry(); memory_tools.bind_memory(self.memory); self.registry.auto_discover()
+        from .skills import SkillManager
+        self.skills=SkillManager(self.registry); self.registry._skill_manager=self.skills
+        from tools import skill_tools
+        skill_tools.bind_manager(self.skills)
         self.agent=AgentLoop(self.engine,self.registry,self.memory); self.server=None
     def status(self):
         return {'version': __import__('config').FRIDAY_VERSION,'pid':os.getpid(),'tools':len(self.registry.tools),'model':self.engine.get_model_status()}
