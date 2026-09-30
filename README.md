@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.3
+# ⚡ F.R.I.D.A.Y. — v1.4
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -78,7 +78,7 @@ Or just double-click **`friday.bat`**.
 
 ---
 
-## Tools (54 loaded at startup)
+## Tools (63 loaded at startup)
 
 | Module | Tools |
 |---|---|
@@ -142,6 +142,7 @@ C:\MARVEL\FRIDAY\
 │   ├── __init__.py
 │   ├── file_tools.py · browser_tools.py · document_tools.py
 │   ├── word_tools.py      ← Word: tables, find/replace, images, PDF
+│   ├── powerpoint_tools.py ← PowerPoint: decks from outlines, charts, notes
 │   ├── system_tools.py · code_tools.py · research_tools.py
 │   ├── math_tools.py · memory_tools.py
 ├── tests\                 ← pytest suite (run: pytest)
@@ -214,6 +215,40 @@ Markdown-lite understood by every Word tool:
 | a | b |        real Word tables (needs a |---|---| separator row)
 ```
 
+### PowerPoint — 9 tools
+
+| Tool | What it does |
+|---|---|
+| `create_presentation` | **A whole deck from one markdown outline** |
+| `add_slide` | Append a bullet or table slide |
+| `add_image_slide` | Image auto-scaled to fit and centred |
+| `add_table_slide` | Table slide from JSON rows |
+| `add_chart_slide` | Native editable bar/column/line/pie/doughnut chart |
+| `read_presentation` | Titles, bullets, tables, charts and notes as text |
+| `set_speaker_notes` | Notes on any slide (1-based) |
+| `get_presentation_info` | Slide inventory marking images/tables/charts/notes |
+| `pptx_to_pdf` | PDF via PowerPoint (COM) or LibreOffice |
+
+One call builds the whole deck — `# ` starts each slide, indentation sets
+bullet depth, `Notes:` becomes speaker notes, and a pipe table becomes a real
+PowerPoint table:
+
+```
+# Agenda
+- Where we are
+  - Word shipped
+- What's next
+Notes: keep this to 30 seconds
+
+# Numbers
+| Region | Q3  |
+|---|---|
+| EMEA   | 4.1M |
+```
+
+Decks default to 16:9 widescreen (`widescreen=false` for 4:3). Charts are real
+PowerPoint chart objects, so the Boss can edit the data in the app.
+
 ### Live app automation (Windows)
 
 `word_to_pdf` and `open_in_office` use Microsoft Office itself through COM when
@@ -223,7 +258,7 @@ instead of a traceback. Install the Windows extra with `pip install pywin32`.
 
 Run `office_status` any time to see what this machine supports.
 
-> PowerPoint and the Excel upgrade are next, in that order.
+> The Excel upgrade is next: formulas, multi-sheet, cell edits, charts and CSV import.
 
 ---
 
