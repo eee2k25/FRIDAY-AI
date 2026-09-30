@@ -165,6 +165,8 @@ Or just double-click **`friday.bat`**.
 | `research_tools` | deep_research (depth 1–3, concurrent fetch) · research_and_write_report · summarize_document · compare_sources |
 | `math_tools` | calculate · unit_convert · solve_equation |
 | `memory_tools` | save_fact · recall_fact · list_facts · search_memory |
+| `channel_tools` | send_telegram · send_slack · send_imessage (relay webhook) |
+| `productivity_tools` | create_calendar_event (ICS) · send_email (SMTP, only when configured) |
 
 Every tool self-registers on import via `ToolRegistry.auto_discover()` and
 returns a **string** (the LLM reads strings). Tool failures never kill the
