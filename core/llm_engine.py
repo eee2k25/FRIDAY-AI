@@ -52,6 +52,7 @@ class LLMEngine:
             ("groq/", "groq"),
             ("openrouter/", "openrouter"),
             ("together/", "together"),
+            ("openai/", "openai"),
         ):
             if low.startswith(prefix):
                 return provider
@@ -64,6 +65,7 @@ class LLMEngine:
             "groq": config.GROQ_API_KEY,
             "openrouter": config.OPENROUTER_API_KEY,
             "together": config.TOGETHER_API_KEY,
+            "openai": config.OPENAI_API_KEY,
         }.get(provider)
 
     def _build_chain(self) -> list[tuple[str, str]]:
@@ -328,6 +330,7 @@ class LLMEngine:
     OPENAI_COMPATIBLE_ENDPOINTS = {
         "openrouter": "https://openrouter.ai/api/v1/chat/completions",
         "together": "https://api.together.xyz/v1/chat/completions",
+        "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions", 
     }
 
     @staticmethod

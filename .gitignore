@@ -12,3 +12,7 @@ logs/friday_code_*/
 .coverage
 htmlcov/
 *.egg-info/
+
+# Runtime files
+friday.pid
+logs/

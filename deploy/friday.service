@@ -1,0 +1,17 @@
+[Unit]
+Description=FRIDAY AI daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/friday-ai
+EnvironmentFile=-%h/friday-ai/.env
+ExecStart=%h/friday-ai/.venv/bin/python friday.py --serve --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

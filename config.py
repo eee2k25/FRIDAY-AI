@@ -59,11 +59,14 @@ GEMINI_API_KEY = _get("GEMINI_API_KEY")
 GROQ_API_KEY = _get("GROQ_API_KEY")
 OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY")
 TOGETHER_API_KEY = _get("TOGETHER_API_KEY")
+OPENAI_API_KEY = _get("OPENAI_API_KEY")
+# Any OpenAI-compatible endpoint can be used with OPENAI_BASE_URL.
+OPENAI_BASE_URL = _get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---
 USER_NAME = _get("FRIDAY_USER_NAME", "Boss")
-FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.5.0")
+FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.7.0")
 DEBUG_MODE = _get("DEBUG_MODE", "False").strip().lower() in ("1", "true", "yes")
 LOG_LEVEL = _get("LOG_LEVEL", "INFO").strip().upper()
 

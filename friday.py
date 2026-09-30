@@ -54,6 +54,17 @@ def _banner(console: Console, tool_count: int, status: dict) -> None:
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="FRIDAY AI")
+    parser.add_argument('--serve', action='store_true', help='run the HTTP daemon')
+    parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--token', default=None)
+    args = parser.parse_args()
+    if args.serve:
+        from core.daemon import FridayDaemon
+        FridayDaemon(args.host, args.port, args.token).serve()
+        return
     console = Console()
 
     # 1 — initialize the stack
@@ -64,6 +75,10 @@ def main() -> None:
 
     memory_tools.bind_memory(memory)
     discovery = registry.auto_discover()
+    from core.skills import SkillManager
+    registry._skill_manager = SkillManager(registry)
+    from tools import skill_tools
+    skill_tools.bind_manager(registry._skill_manager)
     agent = AgentLoop(engine, registry, memory, console=console)
 
     # 2 — startup report
