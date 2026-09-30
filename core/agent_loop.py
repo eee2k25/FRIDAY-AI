@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 
 import config
-from core import streaming
+from core import streaming, tokens
 from core.llm_engine import LLMError
 
 try:
@@ -213,6 +213,20 @@ class AgentLoop:
             return result + (emergency, core_decls)
         return [], [], stream_error, messages, declarations
 
+    def _enforce_token_budget(self, messages: list[dict]) -> list[dict]:
+        """Shed the oldest turns before the context outgrows MAX_CONTEXT_TOKENS.
+
+        Cheaper and far less lossy than waiting for the provider to reject the
+        request and falling into the emergency diet.
+        """
+        trimmed, dropped = tokens.trim_to_budget(messages, config.MAX_CONTEXT_TOKENS)
+        if dropped:
+            config.logger.info("context budget: dropped %d oldest message(s)", dropped)
+            self.console.print(
+                f"[dim]◈ Context budget reached — dropped {dropped} older message(s).[/dim]"
+            )
+        return trimmed
+
     def run(self, user_input: str, session_id: str) -> str:
         self.memory.add_message(session_id, "user", user_input)
         task_id = self.memory.log_task(user_input)
@@ -223,6 +237,7 @@ class AgentLoop:
         text = ""
         for iteration in range(1, config.MAX_AGENT_ITERATIONS + 1):
             self._print_thinking(iteration)
+            messages = self._enforce_token_budget(messages)
             text_buf, calls, stream_error = self._call_llm(messages, declarations)
             if stream_error is None and not text_buf and not calls:
                 # Totally empty response (happens after large tool results) — retry once

@@ -5,8 +5,6 @@ the registry; the tools resolve it lazily at call time.
 """
 from __future__ import annotations
 
-import config
-
 _memory = None
 
 

@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.0
+# ⚡ F.R.I.D.A.Y. — v1.5
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -78,7 +78,7 @@ Or just double-click **`friday.bat`**.
 
 ---
 
-## Tools (47 loaded at startup)
+## Tools (73 loaded at startup)
 
 | Module | Tools |
 |---|---|
@@ -130,19 +130,188 @@ C:\MARVEL\FRIDAY\
 ├── selftest.py            ← offline smoke test (no API keys needed)
 ├── core\
 │   ├── __init__.py
-│   ├── llm_engine.py      ← Gemini + Groq adapters, streaming events, fallback chain
+│   ├── llm_engine.py      ← Gemini / Groq / OpenRouter / Together adapters + fallback chain
 │   ├── streaming.py       ← streaming display handler (live tail, final render, tool styles)
 │   ├── agent_loop.py      ← ReAct loop (THE BRAIN)
 │   ├── memory.py          ← SQLite memory (conversations/facts/tasks/tool usage)
+│   ├── tokens.py          ← context budgeting (enforces MAX_CONTEXT_TOKENS)
+│   ├── office.py          ← MS Office bridge (COM automation, PDF export)
+│   ├── safety.py          ← destructive-shell-command guard
 │   └── tool_registry.py   ← dynamic loader + safe caller
 ├── tools\
 │   ├── __init__.py
-│   ├── file_tools.py · browser_tools.py · document_tools.py
+│   ├── file_tools.py · browser_tools.py
+│   ├── word_tools.py      ← Word: tables, find/replace, images, PDF
+│   ├── powerpoint_tools.py ← PowerPoint: decks from outlines, charts, notes
+│   ├── excel_tools.py     ← Excel: formulas, sheets, charts, CSV, profiling
+│   ├── document_tools.py  ← back-compat shim re-exporting the old names
 │   ├── system_tools.py · code_tools.py · research_tools.py
 │   ├── math_tools.py · memory_tools.py
+├── tests\                 ← pytest suite (run: pytest)
+├── pyproject.toml         ← packaging, ruff + pytest config
 ├── memory\friday_memory.db  (auto-created)
 └── logs\friday.log          (auto-created)
 ```
+
+---
+
+## Tests & linting
+
+```bash
+pip install -e ".[dev]"
+pytest              # 102 tests, no API keys and no network needed
+ruff check .        # lint
+```
+
+CI runs both on every push across Python 3.10 / 3.11 / 3.12
+(`.github/workflows/ci.yml`).
+
+---
+
+## Model providers
+
+Any model in the chain may carry a provider prefix; models whose API key is
+missing are silently skipped, so you can list more than you have keys for.
+
+| Prefix | Provider | Example |
+|---|---|---|
+| *(none)* | Google Gemini | `gemini-2.5-flash` |
+| `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
+| `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
+| `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+
+```env
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-3.3-70b-instruct
+```
+
+---
+
+## Microsoft Office
+
+Office support is **hybrid**: file-based by default (works on any OS, with or
+without Office installed) plus a Windows layer that drives the real apps.
+
+### Word — 11 tools
+
+| Tool | What it does |
+|---|---|
+| `create_word_doc` | Build a .docx from markdown-lite |
+| `read_word_doc` | Extract text, headings, bullets and tables |
+| `append_to_word_doc` | Add more content to an existing doc |
+| `create_project_report` | Title page, date, TOC, sections, page breaks |
+| `add_table_to_word` | Append a real table from JSON rows |
+| `add_image_to_word` | Insert a picture with an optional caption |
+| `word_find_replace` | Replace across body, tables, headers **and** footers |
+| `get_word_doc_info` | Word/table/image counts + heading outline |
+| `word_to_pdf` | PDF via Word (COM), falling back to LibreOffice |
+| `open_in_office` | Open the document in its real app |
+| `office_status` | What Office integration is available on this machine |
+
+Markdown-lite understood by every Word tool:
+
+```
+# / ## / ###     headings          **bold**     bold runs
+- / *            bullets           > quote      block quote
+1.               numbered list     ---          horizontal rule
+| a | b |        real Word tables (needs a |---|---| separator row)
+```
+
+### PowerPoint — 9 tools
+
+| Tool | What it does |
+|---|---|
+| `create_presentation` | **A whole deck from one markdown outline** |
+| `add_slide` | Append a bullet or table slide |
+| `add_image_slide` | Image auto-scaled to fit and centred |
+| `add_table_slide` | Table slide from JSON rows |
+| `add_chart_slide` | Native editable bar/column/line/pie/doughnut chart |
+| `read_presentation` | Titles, bullets, tables, charts and notes as text |
+| `set_speaker_notes` | Notes on any slide (1-based) |
+| `get_presentation_info` | Slide inventory marking images/tables/charts/notes |
+| `pptx_to_pdf` | PDF via PowerPoint (COM) or LibreOffice |
+
+One call builds the whole deck — `# ` starts each slide, indentation sets
+bullet depth, `Notes:` becomes speaker notes, and a pipe table becomes a real
+PowerPoint table:
+
+```
+# Agenda
+- Where we are
+  - Word shipped
+- What's next
+Notes: keep this to 30 seconds
+
+# Numbers
+| Region | Q3  |
+|---|---|
+| EMEA   | 4.1M |
+```
+
+Decks default to 16:9 widescreen (`widescreen=false` for 4:3). Charts are real
+PowerPoint chart objects, so the Boss can edit the data in the app.
+
+### Excel — 13 tools
+
+| Tool | What it does |
+|---|---|
+| `create_excel` | Rows → .xlsx with bold frozen header, auto-fitted columns |
+| `add_excel_sheet` | Multi-sheet workbooks |
+| `append_excel_row` | Append a row |
+| `read_excel` | Sheet as a pipe table, formula-aware |
+| `read_excel_range` | Just `A1:C10` — cheap on huge sheets |
+| `update_excel_cells` | `{"B2": 42, "D10": "=SUM(D2:D9)"}` — real formulas |
+| `format_excel_range` | Bold, number formats, fill colour, width |
+| `add_excel_chart` | Native bar/column/line/pie/scatter charts |
+| `csv_to_excel` / `excel_to_csv` | Import/export, with numeric type coercion |
+| `summarize_excel` | Per-column profile: sum/mean/median/min/max or top values |
+| `get_excel_info` | Sheets, formula counts, charts, freeze panes |
+| `excel_to_pdf` | PDF via Excel (COM) or LibreOffice |
+
+**The formula gotcha, handled.** openpyxl writes formulas but never evaluates
+them, so a plain read returns `None` where a calculation lives. FRIDAY detects
+that and shows the formula text with a note instead of reporting a blank:
+
+```
+Total | =SUM(B2:B4) | =SUM(C2:C4)
+
+[2 formula cell(s) have no cached value yet — Excel/LibreOffice computes them
+ on open. The formula text is shown instead.]
+```
+
+`summarize_excel` is the tool to reach for before answering questions about a
+spreadsheet — it profiles every column instead of burning context on raw rows.
+
+### Live app automation (Windows)
+
+`word_to_pdf` and `open_in_office` use Microsoft Office itself through COM when
+it is there. Off Windows — or with no Office — they fall back to headless
+LibreOffice, and if that is missing too you get a plain, actionable message
+instead of a traceback. Install the Windows extra with `pip install pywin32`.
+
+Run `office_status` any time to see what this machine supports.
+
+All three apps are now covered. `office_status` reports what this machine
+supports; PDF export and open-in-app are the only Windows-flavoured parts, and
+both fall back to LibreOffice.
+
+---
+
+## Safety
+
+FRIDAY runs real shell commands, so catastrophic ones (`rm -rf /`, `mkfs`,
+`shutdown`, `curl … | sh`, force-push, registry deletes) hit a guard first.
+Set the policy in `.env`:
+
+```env
+FRIDAY_SHELL_POLICY=confirm   # ask on the terminal (default)
+# FRIDAY_SHELL_POLICY=block   # refuse, and make her propose something safer
+# FRIDAY_SHELL_POLICY=allow   # no guard
+```
+
+A blocked command comes back to the model as a normal tool failure with the
+reason, so she reroutes instead of crashing. Everyday commands are never
+interrupted.
 
 ---
 

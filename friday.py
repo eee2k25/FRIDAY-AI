@@ -12,11 +12,11 @@ import warnings
 # Keep the console a clean chat surface — no library warnings to stderr.
 warnings.filterwarnings("ignore")
 
-import config
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
 
+import config
 from core.agent_loop import AgentLoop
 from core.llm_engine import LLMEngine
 from core.memory import FridayMemory

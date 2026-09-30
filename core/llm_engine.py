@@ -44,7 +44,30 @@ class LLMEngine:
         m = re.sub(r"\s*[-–]\s*on[_ ]?demand$", "", m, flags=re.IGNORECASE)
         return m.strip()
 
+    @staticmethod
+    def _provider_for(model: str) -> str:
+        """Map a model name to its provider from the optional prefix."""
+        low = model.lower()
+        for prefix, provider in (
+            ("groq/", "groq"),
+            ("openrouter/", "openrouter"),
+            ("together/", "together"),
+        ):
+            if low.startswith(prefix):
+                return provider
+        return "gemini"
+
+    @staticmethod
+    def _key_for(provider: str) -> str | None:
+        return {
+            "gemini": config.GEMINI_API_KEY,
+            "groq": config.GROQ_API_KEY,
+            "openrouter": config.OPENROUTER_API_KEY,
+            "together": config.TOGETHER_API_KEY,
+        }.get(provider)
+
     def _build_chain(self) -> list[tuple[str, str]]:
+        """Ordered (model, provider) pairs, skipping anything with no API key."""
         chain: list[tuple[str, str]] = []
         seen: set[str] = set()
         models = [config.PRIMARY_MODEL] + list(config.FALLBACK_MODELS)
@@ -53,12 +76,11 @@ class LLMEngine:
             if not m or m in seen:
                 continue
             seen.add(m)
-            if m.lower().startswith("groq/"):
-                if config.GROQ_API_KEY:
-                    chain.append((m, "groq"))
+            provider = self._provider_for(m)
+            if self._key_for(provider):
+                chain.append((m, provider))
             else:
-                if config.GEMINI_API_KEY:
-                    chain.append((m, "gemini"))
+                config.logger.debug("skipping %s — no API key for provider %s", m, provider)
         return chain
 
     def set_primary_model(self, model_name: str) -> None:
@@ -95,8 +117,12 @@ class LLMEngine:
             try:
                 if provider == "gemini":
                     yield from self._gemini_stream(messages, declarations, model_name)
-                else:
+                elif provider == "groq":
                     yield from self._groq_stream(messages, declarations, model_name)
+                else:
+                    yield from self._openai_compatible_stream(
+                        messages, declarations, model_name, provider
+                    )
                 self._last_error = None
                 return
             except Exception as e:  # noqa: BLE001 — any API failure triggers fallback
@@ -296,7 +322,18 @@ class LLMEngine:
                             slot["name"] += fn.name
                         if getattr(fn, "arguments", None):
                             slot["args"] += fn.arguments
-        for slot in pending_calls.values():
+        yield from self._emit_tool_calls(pending_calls)
+
+    # ------------------------------- openrouter / together (OpenAI API) ---
+    OPENAI_COMPATIBLE_ENDPOINTS = {
+        "openrouter": "https://openrouter.ai/api/v1/chat/completions",
+        "together": "https://api.together.xyz/v1/chat/completions",
+    }
+
+    @staticmethod
+    def _emit_tool_calls(pending: dict[int, dict]):
+        """Turn accumulated streaming tool-call fragments into function_call events."""
+        for slot in pending.values():
             if not slot["name"]:
                 continue
             try:
@@ -304,6 +341,65 @@ class LLMEngine:
             except json.JSONDecodeError:
                 args = {"raw": slot["args"]}
             yield ("function_call", {"name": slot["name"], "args": args})
+
+    def _openai_compatible_stream(
+        self, messages: list[dict], declarations: list[dict], model_name: str, provider: str
+    ):
+        """Stream from any OpenAI-compatible chat-completions endpoint.
+
+        Used for OpenRouter and Together AI. Talks raw SSE over `requests` so
+        FRIDAY gains two more fallback providers with zero new dependencies.
+        """
+        import requests
+
+        url = self.OPENAI_COMPATIBLE_ENDPOINTS[provider]
+        model_id = model_name.split("/", 1)[1]
+        headers = {
+            "Authorization": f"Bearer {self._key_for(provider)}",
+            "Content-Type": "application/json",
+        }
+        if provider == "openrouter":
+            headers["X-Title"] = "FRIDAY"
+        payload = {
+            "model": model_id,
+            "messages": self._to_openai_messages(messages),
+            "stream": True,
+            "temperature": 0.4,
+        }
+        if declarations:
+            payload["tools"] = [{"type": "function", "function": d} for d in declarations]
+
+        resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        if resp.status_code >= 400:
+            raise LLMError(f"{provider} HTTP {resp.status_code}: {resp.text[:300]}")
+
+        pending: dict[int, dict] = {}
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if not raw_line or not raw_line.startswith("data:"):
+                continue
+            data = raw_line[5:].strip()
+            if data in ("", "[DONE]"):
+                if data == "[DONE]":
+                    break
+                continue
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            if delta.get("content"):
+                yield ("text", delta["content"])
+            for tc in delta.get("tool_calls") or []:
+                slot = pending.setdefault(tc.get("index", 0), {"name": "", "args": ""})
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    slot["name"] += fn["name"]
+                if fn.get("arguments"):
+                    slot["args"] += fn["arguments"]
+        yield from self._emit_tool_calls(pending)
 
     def _to_openai_messages(self, messages: list[dict]) -> list[dict]:
         out: list[dict] = [{"role": "system", "content": self.system_prompt}]

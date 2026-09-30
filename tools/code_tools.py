@@ -93,7 +93,7 @@ def write_and_run_code(filename: str, code: str, language: str = "python") -> st
             errors="replace",
         )
     except subprocess.TimeoutExpired:
-        raise TimeoutError("code run timed out after 30s")
+        raise TimeoutError("code run timed out after 30s") from None
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip()
     result = f"EXIT CODE: {proc.returncode}\n"

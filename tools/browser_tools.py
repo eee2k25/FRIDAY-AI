@@ -76,9 +76,9 @@ def fetch_webpage(url: str, extract_mode: str = "text") -> str:
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=15, allow_redirects=True)
     except requests.exceptions.Timeout:
-        raise TimeoutError(f"timed out fetching {url} (15s)")
+        raise TimeoutError(f"timed out fetching {url} (15s)") from None
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"fetch failed for {url}: {e}")
+        raise RuntimeError(f"fetch failed for {url}: {e}") from e
     if resp.status_code == 404:
         raise FileNotFoundError(f"404 — {url} does not exist")
     if resp.status_code >= 400:

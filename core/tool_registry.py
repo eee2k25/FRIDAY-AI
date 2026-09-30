@@ -26,7 +26,7 @@ class ToolRegistry:
         if not isinstance(declaration, dict) or "description" not in declaration:
             declaration = {
                 "name": name,
-                "description": (getattr(func, "__doc__") or name).strip(),
+                "description": (func.__doc__ or name).strip(),
                 "parameters": {"type": "object", "properties": {}},
             }
         declaration["name"] = name
