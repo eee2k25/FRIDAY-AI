@@ -45,8 +45,13 @@ class FridayDaemon:
                 if self.path=='/profile':
                     from tools.profile_tools import get_profile
                     return self.send(200, {'profile': get_profile()})
+                if self.path=='/voice':
+                    return self.send(200, {'browser_speech_input': True, 'browser_speech_output': True, 'elevenlabs': bool(os.getenv('ELEVENLABS_API_KEY') and os.getenv('ELEVENLABS_VOICE_ID'))})
                 if self.path=='/':
-                    html=b'<html><head><title>FRIDAY</title></head><body><h1>F.R.I.D.A.Y.</h1><p>Online. Use POST /chat with {"message":"..."}.</p></body></html>'
+                    html=b'''<html><head><title>FRIDAY</title><meta name="viewport" content="width=device-width"></head><body><h1>F.R.I.D.A.Y.</h1><p>Online.</p><input id="q" placeholder="Ask FRIDAY" size="50"><button onclick="ask()">Send</button><button onclick="listen()">Speak</button><pre id="out"></pre><script>
+async function ask(t){t=t||document.getElementById('q').value;if(!t)return;let r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:t})});let j=await r.json();document.getElementById('out').textContent=j.reply||j.error||'';if(window.speechSynthesis&&j.reply)speechSynthesis.speak(new SpeechSynthesisUtterance(j.reply));}
+function listen(){let R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){alert('Speech input is not supported by this browser');return}let r=new R;r.lang='en-US';r.onresult=e=>ask(e.results[0][0].transcript);r.start()}
+</script></body></html>'''
                     self.send_response(200); self.send_header('Content-Type','text/html'); self.send_header('Content-Length',str(len(html))); self.end_headers(); self.wfile.write(html); return
                 self.send(404,{'error':'not found'})
             def do_POST(self):
