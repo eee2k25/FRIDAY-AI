@@ -59,6 +59,9 @@ GEMINI_API_KEY = _get("GEMINI_API_KEY")
 GROQ_API_KEY = _get("GROQ_API_KEY")
 OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY")
 TOGETHER_API_KEY = _get("TOGETHER_API_KEY")
+OPENAI_API_KEY = _get("OPENAI_API_KEY")
+# Any OpenAI-compatible endpoint can be used with OPENAI_BASE_URL.
+OPENAI_BASE_URL = _get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---
