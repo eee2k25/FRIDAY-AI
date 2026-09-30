@@ -44,16 +44,33 @@ def list_facts() -> str:
 
 def search_memory(query: str) -> str:
     """Search both stored facts and conversation history for a query."""
-    hits = _mem().search_history(query, limit=10)
+    # Lightweight local relevance ranking: no external vector database or API key
+    # is required. Exact phrases score highest, followed by token overlap.
+    import re
+    q = query.lower().strip()
+    tokens = set(re.findall(r"[a-z0-9_]+", q))
     facts = _mem().get_all_facts()
-    fact_hits = {
-        k: v
-        for k, v in facts.items()
-        if query.lower() in k.lower() or query.lower() in str(v).lower()
-    }
+    scored_facts = []
+    for k, v in facts.items():
+        text = f"{k} {v}".lower()
+        overlap = len(tokens & set(re.findall(r"[a-z0-9_]+", text)))
+        score = (100 if q and q in text else 0) + overlap
+        if score:
+            scored_facts.append((score, k, v))
+    fact_hits = sorted(scored_facts, reverse=True)[:10]
+    hits = _mem().search_history(query, limit=30)
+    scored_hits = []
+    for h in hits:
+        text = h['content'].lower()
+        overlap = len(tokens & set(re.findall(r"[a-z0-9_]+", text)))
+        score = (100 if q and q in text else 0) + overlap
+        if score:
+            scored_hits.append((score, h))
+    scored_hits.sort(key=lambda x: x[0], reverse=True)
+    hits = [h for _, h in scored_hits[:10]]
     parts = []
     if fact_hits:
-        parts.append("FACTS:\n" + "\n".join(f"- {k}: {v}" for k, v in fact_hits.items()))
+        parts.append("FACTS:\n" + "\n".join(f"- {k}: {v}" for _, k, v in fact_hits))
     if hits:
         parts.append(
             "CONVERSATION HITS:\n"
