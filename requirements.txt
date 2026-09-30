@@ -1,4 +1,4 @@
-# FRIDAY v1.4.0 — Python 3.10+
+# FRIDAY v1.5.0 — Python 3.10+
 # Dev extras:  pip install -e ".[dev]"
 # Install:  pip install -r requirements.txt
 

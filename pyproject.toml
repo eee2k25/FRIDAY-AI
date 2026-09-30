@@ -1,6 +1,6 @@
 [project]
 name = "friday-ai"
-version = "1.4.0"
+version = "1.5.0"
 description = "F.R.I.D.A.Y — a local, tool-using agentic assistant with persistent memory."
 readme = "README.md"
 requires-python = ">=3.10"

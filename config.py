@@ -63,7 +63,7 @@ HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---
 USER_NAME = _get("FRIDAY_USER_NAME", "Boss")
-FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.4.0")
+FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.5.0")
 DEBUG_MODE = _get("DEBUG_MODE", "False").strip().lower() in ("1", "true", "yes")
 LOG_LEVEL = _get("LOG_LEVEL", "INFO").strip().upper()
 

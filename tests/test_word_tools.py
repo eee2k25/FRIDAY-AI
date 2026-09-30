@@ -262,13 +262,12 @@ def test_word_tools_are_reachable_through_auto_discovery(registry):
 
 
 def test_no_duplicate_registration_between_word_and_document_tools(registry):
-    """document_tools re-exports Word functions but must not re-register them."""
+    """document_tools re-exports Word functions but must not re-register them,
+    otherwise auto_discover would overwrite word_tools' richer declarations."""
     from tools import document_tools
 
-    before = set(registry.tools)
-    document_tools.register_tools(registry)
-    added = set(registry.tools) - before
-    assert not any("word" in name for name in added)
+    assert not hasattr(document_tools, "register_tools")
+    assert document_tools.create_word_doc is wt.create_word_doc
 
 
 def test_errors_surface_as_tool_failures_not_crashes(registry):

@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.4
+# ⚡ F.R.I.D.A.Y. — v1.5
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -78,7 +78,7 @@ Or just double-click **`friday.bat`**.
 
 ---
 
-## Tools (63 loaded at startup)
+## Tools (73 loaded at startup)
 
 | Module | Tools |
 |---|---|
@@ -140,9 +140,11 @@ C:\MARVEL\FRIDAY\
 │   └── tool_registry.py   ← dynamic loader + safe caller
 ├── tools\
 │   ├── __init__.py
-│   ├── file_tools.py · browser_tools.py · document_tools.py
+│   ├── file_tools.py · browser_tools.py
 │   ├── word_tools.py      ← Word: tables, find/replace, images, PDF
 │   ├── powerpoint_tools.py ← PowerPoint: decks from outlines, charts, notes
+│   ├── excel_tools.py     ← Excel: formulas, sheets, charts, CSV, profiling
+│   ├── document_tools.py  ← back-compat shim re-exporting the old names
 │   ├── system_tools.py · code_tools.py · research_tools.py
 │   ├── math_tools.py · memory_tools.py
 ├── tests\                 ← pytest suite (run: pytest)
@@ -249,6 +251,37 @@ Notes: keep this to 30 seconds
 Decks default to 16:9 widescreen (`widescreen=false` for 4:3). Charts are real
 PowerPoint chart objects, so the Boss can edit the data in the app.
 
+### Excel — 13 tools
+
+| Tool | What it does |
+|---|---|
+| `create_excel` | Rows → .xlsx with bold frozen header, auto-fitted columns |
+| `add_excel_sheet` | Multi-sheet workbooks |
+| `append_excel_row` | Append a row |
+| `read_excel` | Sheet as a pipe table, formula-aware |
+| `read_excel_range` | Just `A1:C10` — cheap on huge sheets |
+| `update_excel_cells` | `{"B2": 42, "D10": "=SUM(D2:D9)"}` — real formulas |
+| `format_excel_range` | Bold, number formats, fill colour, width |
+| `add_excel_chart` | Native bar/column/line/pie/scatter charts |
+| `csv_to_excel` / `excel_to_csv` | Import/export, with numeric type coercion |
+| `summarize_excel` | Per-column profile: sum/mean/median/min/max or top values |
+| `get_excel_info` | Sheets, formula counts, charts, freeze panes |
+| `excel_to_pdf` | PDF via Excel (COM) or LibreOffice |
+
+**The formula gotcha, handled.** openpyxl writes formulas but never evaluates
+them, so a plain read returns `None` where a calculation lives. FRIDAY detects
+that and shows the formula text with a note instead of reporting a blank:
+
+```
+Total | =SUM(B2:B4) | =SUM(C2:C4)
+
+[2 formula cell(s) have no cached value yet — Excel/LibreOffice computes them
+ on open. The formula text is shown instead.]
+```
+
+`summarize_excel` is the tool to reach for before answering questions about a
+spreadsheet — it profiles every column instead of burning context on raw rows.
+
 ### Live app automation (Windows)
 
 `word_to_pdf` and `open_in_office` use Microsoft Office itself through COM when
@@ -258,7 +291,9 @@ instead of a traceback. Install the Windows extra with `pip install pywin32`.
 
 Run `office_status` any time to see what this machine supports.
 
-> The Excel upgrade is next: formulas, multi-sheet, cell edits, charts and CSV import.
+All three apps are now covered. `office_status` reports what this machine
+supports; PDF export and open-in-app are the only Windows-flavoured parts, and
+both fall back to LibreOffice.
 
 ---
 

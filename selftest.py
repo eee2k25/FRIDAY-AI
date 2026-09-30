@@ -86,6 +86,9 @@ def main() -> int:
             "web_search", "fetch_webpage", "search_and_fetch", "read_pdf_url", "read_local_pdf",
             "create_word_doc", "read_word_doc", "append_to_word_doc", "create_project_report",
             "create_excel", "read_excel", "append_excel_row",
+            "update_excel_cells", "summarize_excel", "add_excel_chart",
+            "create_presentation", "add_chart_slide", "read_presentation",
+            "add_table_to_word", "word_find_replace",
             "run_command", "run_python_code", "open_application", "get_system_info",
             "list_running_processes", "get_current_time",
             "analyze_code", "write_and_run_code", "fix_python_error", "git_status",
@@ -110,7 +113,9 @@ def main() -> int:
             "tools.research_tools", "tools.browser_tools", "tools.document_tools",
             "tools.file_tools", "tools.system_tools", "tools.code_tools",
             "tools.math_tools", "tools.memory_tools",
+            "tools.word_tools", "tools.powerpoint_tools", "tools.excel_tools",
             "core.agent_loop", "core.llm_engine", "core.memory", "core.tool_registry",
+            "core.office", "core.safety", "core.tokens",
         ):
             mod = importlib.import_module(mod_name)
             tree = _ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
