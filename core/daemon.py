@@ -58,12 +58,16 @@ async function refresh(){let h=await fetch('/health');document.getElementById('h
                 self.send(404,{'error':'not found'})
             def do_POST(self):
                 if not self.auth(): return self.send(401,{'error':'unauthorized'})
-                if self.path in ('/telegram/webhook','/slack/events'):
+                if self.path in ('/telegram/webhook','/slack/events','/imessage/webhook'):
                     try:
                         data=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
                         if self.path.endswith('telegram/webhook'):
                             text=((data.get('message') or {}).get('text') or '')
                             sid='telegram:'+str((data.get('message') or {}).get('chat',{}).get('id','unknown'))
+                        elif self.path.endswith('imessage/webhook'):
+                            text=data.get('text') or data.get('message','')
+                            sender=data.get('from') or data.get('sender') or data.get('phone') or 'unknown'
+                            sid='imessage:'+str(sender)
                         else:
                             if data.get('type') == 'url_verification': return self.send(200, {'challenge':data.get('challenge','')})
                             text=data.get('event',{}).get('text',''); sid='slack:'+str(data.get('event',{}).get('user','unknown'))
