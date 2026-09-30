@@ -1,13 +1,20 @@
-"""Document tools — Word (.docx) via python-docx, Excel (.xlsx) via openpyxl.
+"""Document tools — Excel (.xlsx) via openpyxl.
 
-Markdown-lite is accepted in content:  # / ## / ###  → headings,
-- / *  → bullets,  1.  → numbered,  **bold**  → bold runs.
+Word (.docx) support moved to tools/word_tools.py in v1.3.0 when it grew
+tables, find/replace, images and PDF export. The Word functions are
+re-exported here so existing imports keep working.
 """
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
+
+from tools.word_tools import (  # noqa: F401 — backwards-compatible re-exports
+    append_to_word_doc,
+    create_project_report,
+    create_word_doc,
+    read_word_doc,
+)
 
 
 def _p(path: str) -> Path:
@@ -17,147 +24,13 @@ def _p(path: str) -> Path:
     return p
 
 
-def _docx():
-    try:
-        import docx
-        return docx
-    except ImportError as e:
-        raise RuntimeError("python-docx not installed. Run: pip install python-docx") from e
-
-
 def _xlsx():
     try:
         import openpyxl
+
         return openpyxl
     except ImportError as e:
         raise RuntimeError("openpyxl not installed. Run: pip install openpyxl") from e
-
-
-def _add_markdown_line(doc, line: str) -> None:
-    if not line.strip():
-        doc.add_paragraph("")
-        return
-    stripped = line.strip()
-    if stripped.startswith("### "):
-        doc.add_heading(stripped[4:], level=3)
-    elif stripped.startswith("## "):
-        doc.add_heading(stripped[3:], level=2)
-    elif stripped.startswith("# "):
-        doc.add_heading(stripped[2:], level=1)
-    elif stripped.startswith(("- ", "* ")):
-        _add_inline(doc.add_paragraph(), stripped[2:], style="List Bullet")
-    elif re.match(r"^\d+\.\s", stripped):
-        _add_inline(doc.add_paragraph(), re.sub(r"^\d+\.\s", "", stripped), style="List Number")
-    else:
-        _add_inline(doc.add_paragraph(), line)
-
-
-def _add_inline(paragraph, text: str, style: str | None = None) -> None:
-    if style:
-        paragraph.style = style
-    for seg in re.split(r"(\*\*.+?\*\*)", text):
-        if not seg:
-            continue
-        if seg.startswith("**") and seg.endswith("**") and len(seg) > 4:
-            paragraph.add_run(seg[2:-2]).bold = True
-        else:
-            paragraph.add_run(seg)
-
-
-def _parse_sections(sections) -> dict:
-    if isinstance(sections, str):
-        try:
-            sections = json.loads(sections)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"sections must be a JSON object: {e}") from e
-    if not isinstance(sections, dict) or not sections:
-        raise ValueError("sections must be a non-empty {name: content} mapping")
-    return sections
-
-
-# ---------------------------------------------------------------- word ---
-def create_word_doc(path: str, title: str, content: str) -> str:
-    """Create a .docx from a title + markdown-lite content."""
-    docx = _docx()
-    p = _p(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    doc = docx.Document()
-    doc.add_heading(title, level=0)
-    for line in content.splitlines():
-        _add_markdown_line(doc, line)
-    doc.save(str(p))
-    return f"Created: {p} ({p.stat().st_size} bytes)"
-
-
-def read_word_doc(path: str) -> str:
-    """Extract all text from a .docx, preserving heading/bullet structure."""
-    docx = _docx()
-    p = _p(path)
-    if not p.exists():
-        raise FileNotFoundError(f"document not found: {p}")
-    doc = docx.Document(str(p))
-    lines = []
-    for para in doc.paragraphs:
-        style = (para.style.name or "") if para.style else ""
-        text = para.text.strip()
-        if not text:
-            continue
-        if "Heading 1" in style:
-            lines.append(f"# {text}")
-        elif "Heading 2" in style:
-            lines.append(f"## {text}")
-        elif "Heading 3" in style:
-            lines.append(f"### {text}")
-        elif "List" in style:
-            lines.append(f"- {text}")
-        else:
-            lines.append(text)
-    for table in doc.tables:
-        for row in table.rows:
-            lines.append(" | ".join(c.text.strip() for c in row.cells))
-    return "\n".join(lines) if lines else "(empty document)"
-
-
-def append_to_word_doc(path: str, content: str) -> str:
-    """Append markdown-lite content to an existing .docx."""
-    docx = _docx()
-    p = _p(path)
-    if not p.exists():
-        raise FileNotFoundError(f"document not found: {p}")
-    doc = docx.Document(str(p))
-    for line in content.splitlines():
-        _add_markdown_line(doc, line)
-    doc.save(str(p))
-    return f"Appended to {p} ({p.stat().st_size} bytes)"
-
-
-def create_project_report(path: str, title: str, sections: dict) -> str:
-    """Create a formatted project report: title, date, TOC, sectioned body,
-    page breaks between sections."""
-    import datetime
-
-    docx = _docx()
-    secs = _parse_sections(sections)
-    p = _p(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    doc = docx.Document()
-    doc.add_heading(title, level=0)
-    doc.add_paragraph(f"Generated by FRIDAY — {datetime.datetime.now():%d %B %Y, %H:%M}")
-    doc.add_heading("Table of Contents", level=1)
-    for i, name in enumerate(secs.keys(), 1):
-        _add_inline(doc.add_paragraph(), f"{i}. {name}", style="List Number")
-    doc.add_page_break()
-
-    for i, (name, body) in enumerate(secs.items()):
-        doc.add_heading(f"{i + 1}. {name}", level=1)
-        for line in str(body).splitlines():
-            _add_markdown_line(doc, line)
-        if i < len(secs) - 1:
-            doc.add_page_break()
-
-    doc.save(str(p))
-    return f"Report created: {p} ({len(secs)} sections, {p.stat().st_size} bytes)"
 
 
 # ---------------------------------------------------------------- excel ---
@@ -223,56 +96,6 @@ def append_excel_row(path: str, sheet_name: str, row_data: str) -> str:
 
 
 _DECLARATIONS: list[dict] = [
-    {
-        "name": "create_word_doc",
-        "description": "Create a Word .docx document from a title and markdown-lite content (# headings, - bullets, **bold**). Returns the path.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Output .docx path"},
-                "title": {"type": "string"},
-                "content": {"type": "string", "description": "Body text; use # / ## / ### for headings, - for bullets, **bold**"},
-            },
-            "required": ["path", "title", "content"],
-        },
-    },
-    {
-        "name": "read_word_doc",
-        "description": "Extract all text from a .docx preserving heading/bullet structure.",
-        "parameters": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "append_to_word_doc",
-        "description": "Append markdown-lite content to an existing .docx.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-            },
-            "required": ["path", "content"],
-        },
-    },
-    {
-        "name": "create_project_report",
-        "description": "Create a full project report .docx: title, date, table of contents, one section per entry, page breaks between sections.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Output .docx path"},
-                "title": {"type": "string"},
-                "sections": {
-                    "type": "object",
-                    "description": "Ordered mapping of section name → body text (markdown-lite).",
-                },
-            },
-            "required": ["path", "title", "sections"],
-        },
-    },
     {
         "name": "create_excel",
         "description": "Create an Excel .xlsx from a JSON list of rows. First row becomes a bold header.",

@@ -1,4 +1,4 @@
-# FRIDAY v1.2.0 — Python 3.10+
+# FRIDAY v1.3.0 — Python 3.10+
 # Dev extras:  pip install -e ".[dev]"
 # Install:  pip install -r requirements.txt
 
@@ -17,3 +17,7 @@ pyperclip>=1.9.0
 sympy>=1.13.0
 rich>=13.7.0
 pint>=0.24.0
+
+# Office app automation (Windows only — PDF export via Word/Excel/PowerPoint,
+# open-in-app). Everything else works without it.
+pywin32>=306; sys_platform == "win32"

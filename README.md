@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.2
+# ⚡ F.R.I.D.A.Y. — v1.3
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -78,7 +78,7 @@ Or just double-click **`friday.bat`**.
 
 ---
 
-## Tools (47 loaded at startup)
+## Tools (54 loaded at startup)
 
 | Module | Tools |
 |---|---|
@@ -135,11 +135,13 @@ C:\MARVEL\FRIDAY\
 │   ├── agent_loop.py      ← ReAct loop (THE BRAIN)
 │   ├── memory.py          ← SQLite memory (conversations/facts/tasks/tool usage)
 │   ├── tokens.py          ← context budgeting (enforces MAX_CONTEXT_TOKENS)
+│   ├── office.py          ← MS Office bridge (COM automation, PDF export)
 │   ├── safety.py          ← destructive-shell-command guard
 │   └── tool_registry.py   ← dynamic loader + safe caller
 ├── tools\
 │   ├── __init__.py
 │   ├── file_tools.py · browser_tools.py · document_tools.py
+│   ├── word_tools.py      ← Word: tables, find/replace, images, PDF
 │   ├── system_tools.py · code_tools.py · research_tools.py
 │   ├── math_tools.py · memory_tools.py
 ├── tests\                 ← pytest suite (run: pytest)
@@ -179,6 +181,49 @@ missing are silently skipped, so you can list more than you have keys for.
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-3.3-70b-instruct
 ```
+
+---
+
+## Microsoft Office
+
+Office support is **hybrid**: file-based by default (works on any OS, with or
+without Office installed) plus a Windows layer that drives the real apps.
+
+### Word — 11 tools
+
+| Tool | What it does |
+|---|---|
+| `create_word_doc` | Build a .docx from markdown-lite |
+| `read_word_doc` | Extract text, headings, bullets and tables |
+| `append_to_word_doc` | Add more content to an existing doc |
+| `create_project_report` | Title page, date, TOC, sections, page breaks |
+| `add_table_to_word` | Append a real table from JSON rows |
+| `add_image_to_word` | Insert a picture with an optional caption |
+| `word_find_replace` | Replace across body, tables, headers **and** footers |
+| `get_word_doc_info` | Word/table/image counts + heading outline |
+| `word_to_pdf` | PDF via Word (COM), falling back to LibreOffice |
+| `open_in_office` | Open the document in its real app |
+| `office_status` | What Office integration is available on this machine |
+
+Markdown-lite understood by every Word tool:
+
+```
+# / ## / ###     headings          **bold**     bold runs
+- / *            bullets           > quote      block quote
+1.               numbered list     ---          horizontal rule
+| a | b |        real Word tables (needs a |---|---| separator row)
+```
+
+### Live app automation (Windows)
+
+`word_to_pdf` and `open_in_office` use Microsoft Office itself through COM when
+it is there. Off Windows — or with no Office — they fall back to headless
+LibreOffice, and if that is missing too you get a plain, actionable message
+instead of a traceback. Install the Windows extra with `pip install pywin32`.
+
+Run `office_status` any time to see what this machine supports.
+
+> PowerPoint and the Excel upgrade are next, in that order.
 
 ---
 
