@@ -38,6 +38,9 @@ class FridayDaemon:
                 if self.path=='/health': return self.send(200,{'ok':True,'pid':os.getpid()})
                 if not self.auth(): return self.send(401,{'error':'unauthorized'})
                 if self.path=='/status': return self.send(200,daemon.status())
+                if self.path=='/profile':
+                    from tools.profile_tools import get_profile
+                    return self.send(200, {'profile': get_profile()})
                 if self.path=='/':
                     html=b'<html><head><title>FRIDAY</title></head><body><h1>F.R.I.D.A.Y.</h1><p>Online. Use POST /chat with {"message":"..."}.</p></body></html>'
                     self.send_response(200); self.send_header('Content-Type','text/html'); self.send_header('Content-Length',str(len(html))); self.end_headers(); self.wfile.write(html); return
