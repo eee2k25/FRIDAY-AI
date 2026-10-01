@@ -74,11 +74,13 @@ Or just double-click **`friday.bat`**.
 ### API keys needed
 - **`GEMINI_API_KEY`** — required (primary model)
 - **`GROQ_API_KEY`** — recommended (fallback if Gemini rate-limits)
-- The rest (`OPENROUTER`, `TOGETHER`, `HUGGINGFACE`) are reserved for future modules (JARVIS / EDITH)
+- Optional model/provider keys: `OPENROUTER_API_KEY`, `TOGETHER_API_KEY`, `OPENAI_API_KEY`, `HUGGINGFACE_TOKEN`
+- Optional channels and voice: `SLACK_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`, `IMESSAGE_WEBHOOK_URL`, `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`
+- Optional productivity bridge: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (plus `SMTP_PORT` / `SMTP_FROM`)
 
 ---
 
-## Tools (73 loaded at startup)
+## Tools (auto-loaded at startup)
 
 | Module | Tools |
 |---|---|
@@ -90,6 +92,10 @@ Or just double-click **`friday.bat`**.
 | `research_tools` | deep_research (depth 1–3, concurrent fetch) · research_and_write_report · summarize_document · compare_sources |
 | `math_tools` | calculate · unit_convert · solve_equation |
 | `memory_tools` | save_fact · recall_fact · list_facts · search_memory |
+| `profile_tools` | onboard_user · set_profile · get_profile |
+| `productivity_tools` | create_calendar_event · send_email |
+| `channel_tools` | send_slack · send_telegram · send_imessage |
+| `voice_tools` | voice_status · speak |
 
 Every tool self-registers on import via `ToolRegistry.auto_discover()` and
 returns a **string** (the LLM reads strings). Tool failures never kill the
