@@ -40,7 +40,51 @@ exists — file written, report created — not until she gets stuck.
 
 ---
 
-## Setup (Windows, PowerShell at `C:\MARVEL\FRIDAY\`)
+## Setup (Windows) — one command, fully automatic
+
+Double-click **`setup.bat`** (or run `.\setup.ps1` in PowerShell). It asks for
+admin permission **once**, at setup, and then does everything itself:
+
+| Step | What setup does automatically |
+|---|---|
+| 🐍 Python | finds Python 3.10+ (installs it via winget if missing), creates `.venv`, installs all requirements |
+| 🔑 Keys | creates `.env` from `.env.example` and prompts for your `GEMINI_API_KEY` |
+| ⌨️ `friday` command | installs a global launcher on your PATH — open **any** PowerShell/CMD window, type `friday`, she starts |
+| 🛡️ Admin access | registers her scheduled tasks with **highest privileges** — approved once at setup, no UAC prompts ever again |
+| 🔁 Always-on | "FRIDAY AI" task starts the daemon at every logon |
+| 🧹 Daily upkeep | "FRIDAY Maintenance" task checks system performance and cleans junk **every day at 10:00** (change with `-MaintenanceTime '21:30'`) |
+| ✅ First pass | runs an immediate performance check + maintenance so you start clean |
+
+```powershell
+# install everything
+.\setup.ps1
+
+# options
+.\setup.ps1 -NoDaemon                     # skip the always-on daemon task
+.\setup.ps1 -MaintenanceTime '21:30'      # daily tune-up at 9:30 pm instead
+.\setup.ps1 -Uninstall                    # remove tasks, PATH entry and the friday command
+```
+
+Then open a **new** PowerShell window anywhere and type:
+
+```powershell
+friday
+```
+
+### Day-by-day performance & maintenance
+
+The daily task (and the chat tools) keep the PC healthy:
+
+- `check_system_performance` — 0-100 health score: CPU, RAM, disks, temp junk, uptime, top resource hogs, recommendations
+- `run_maintenance` — clears old temp files, flushes DNS cache, trims logs (`deep=true` adds Windows component-store cleanup)
+- `get_maintenance_history` — day-by-day log of every run (files removed, MB freed, RAM/disk trend)
+- `list_startup_programs` — find what's slowing the boot
+
+Just ask her: *"check system performance"*, *"run a deep maintenance"*, *"show maintenance history"*.
+Headless/CLI: `friday --maintain` (or `friday --maintain --deep`). Reports land in `logs/maintenance/`.
+
+<details>
+<summary><b>Manual setup (if you prefer doing it yourself)</b></summary>
 
 ```powershell
 # Step 1 — create venv
@@ -70,6 +114,8 @@ python friday.py
 ```
 
 Or just double-click **`friday.bat`**.
+
+</details>
 
 ### API keys needed
 - **`GEMINI_API_KEY`** — required (primary model)

@@ -1,5 +1,6 @@
 """Persistent user profile and onboarding tools."""
 from __future__ import annotations
+
 from tools import memory_tools
 
 PROFILE_FIELDS = ("name", "work", "goals", "preferences", "communication_style", "timezone")

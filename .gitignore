@@ -19,3 +19,5 @@ htmlcov/
 # Runtime files
 friday.pid
 logs/
+memory/maintenance_history.json
+logs/maintenance/
