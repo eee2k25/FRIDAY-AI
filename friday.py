@@ -60,7 +60,18 @@ def main() -> None:
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--token', default=None)
+    parser.add_argument('--maintain', action='store_true',
+                        help='run the daily system maintenance pass and exit '
+                             '(used by the "FRIDAY Maintenance" scheduled task)')
+    parser.add_argument('--deep', action='store_true',
+                        help='with --maintain: deeper cleanup (component store, all temp files)')
     args = parser.parse_args()
+    if args.maintain:
+        from tools import maintenance_tools
+        print(maintenance_tools.check_system_performance())
+        print()
+        print(maintenance_tools.run_maintenance(deep=args.deep))
+        return
     if args.serve:
         from core.daemon import FridayDaemon
         FridayDaemon(args.host, args.port, args.token).serve()

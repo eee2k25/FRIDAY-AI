@@ -35,7 +35,15 @@ curl http://127.0.0.1:8765/health
 
 ## Windows
 
-Run PowerShell as the user who should own the service:
+**Preferred:** run the one-shot installer at the repository root — it self-elevates,
+creates the venv, installs the global `friday` command, and registers both the
+always-on daemon task and the daily "FRIDAY Maintenance" task with highest privileges:
+
+```powershell
+.\setup.ps1
+```
+
+Legacy daemon-only install (venv must already exist):
 
 ```powershell
 .\deploy\install-windows.ps1
