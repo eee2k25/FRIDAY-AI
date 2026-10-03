@@ -330,7 +330,7 @@ class LLMEngine:
     OPENAI_COMPATIBLE_ENDPOINTS = {
         "openrouter": "https://openrouter.ai/api/v1/chat/completions",
         "together": "https://api.together.xyz/v1/chat/completions",
-        "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions", 
+        "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
     }
 
     @staticmethod

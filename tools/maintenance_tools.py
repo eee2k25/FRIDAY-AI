@@ -20,7 +20,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from datetime import datetime
@@ -66,7 +65,7 @@ def _dir_size(path: Path, limit_files: int = 50000) -> int:
 def _temp_dirs() -> list[Path]:
     dirs = [Path(tempfile.gettempdir())]
     if _IS_WINDOWS:
-        win_temp = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Temp"
+        win_temp = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "Temp"
         if win_temp.exists() and win_temp not in dirs:
             dirs.append(win_temp)
     return dirs
@@ -120,25 +119,35 @@ def check_system_performance() -> str:
     # health score
     score, issues = 100, []
     if cpu > 85:
-        score -= 20; issues.append(f"CPU is under heavy load ({cpu:.0f}%) — check the top processes below.")
+        score -= 20
+        issues.append(f"CPU is under heavy load ({cpu:.0f}%) — check the top processes below.")
     elif cpu > 60:
-        score -= 10; issues.append(f"CPU load is elevated ({cpu:.0f}%).")
+        score -= 10
+        issues.append(f"CPU load is elevated ({cpu:.0f}%).")
     if mem.percent > 90:
-        score -= 20; issues.append(f"RAM nearly full ({mem.percent:.0f}%) — close unused apps or add memory.")
+        score -= 20
+        issues.append(f"RAM nearly full ({mem.percent:.0f}%) — close unused apps or add memory.")
     elif mem.percent > 75:
-        score -= 10; issues.append(f"RAM usage is high ({mem.percent:.0f}%).")
+        score -= 10
+        issues.append(f"RAM usage is high ({mem.percent:.0f}%).")
     if worst_disk > 90:
-        score -= 20; issues.append(f"A disk is {worst_disk:.0f}% full — free space is critical for performance.")
+        score -= 20
+        issues.append(f"A disk is {worst_disk:.0f}% full — free space is critical for performance.")
     elif worst_disk > 80:
-        score -= 10; issues.append(f"A disk is {worst_disk:.0f}% full — consider cleaning up.")
+        score -= 10
+        issues.append(f"A disk is {worst_disk:.0f}% full — consider cleaning up.")
     if temp_bytes > 2 * 2**30:
-        score -= 10; issues.append(f"{temp_bytes / 2**30:.1f} GB of temp junk — run_maintenance will clear it.")
+        score -= 10
+        issues.append(f"{temp_bytes / 2**30:.1f} GB of temp junk — run_maintenance will clear it.")
     elif temp_bytes > 500 * 2**20:
-        score -= 5; issues.append(f"{temp_bytes / 2**20:.0f} MB of temp files can be cleaned.")
+        score -= 5
+        issues.append(f"{temp_bytes / 2**20:.0f} MB of temp files can be cleaned.")
     if uptime_days > 14:
-        score -= 10; issues.append(f"Up {uptime_days:.0f} days without a restart — a reboot would help.")
+        score -= 10
+        issues.append(f"Up {uptime_days:.0f} days without a restart — a reboot would help.")
     elif uptime_days > 7:
-        score -= 5; issues.append(f"Up {uptime_days:.0f} days — consider a restart soon.")
+        score -= 5
+        issues.append(f"Up {uptime_days:.0f} days — consider a restart soon.")
     score = max(0, score)
     verdict = ("EXCELLENT" if score >= 90 else "GOOD" if score >= 75 else
                "NEEDS ATTENTION" if score >= 50 else "POOR")
@@ -154,9 +163,9 @@ def check_system_performance() -> str:
         f"Uptime:  {uptime_days:.1f} days (booted {boot:%Y-%m-%d %H:%M})",
         "",
         "Top memory users:",
-        *(f"  {l}" for l in _top_processes(psutil, "mem")),
+        *(f"  {line}" for line in _top_processes(psutil, "mem")),
         "Top CPU users:",
-        *(f"  {l}" for l in _top_processes(psutil, "cpu")),
+        *(f"  {line}" for line in _top_processes(psutil, "cpu")),
     ]
     if issues:
         lines += ["", "Recommendations:"] + [f"  - {i}" for i in issues]
