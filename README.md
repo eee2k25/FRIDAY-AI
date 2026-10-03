@@ -116,6 +116,64 @@ Boss → what's my name?
 
 ---
 
+## Cloud extensions
+
+FRIDAY can use **Gmail, Google Drive, Google Calendar, Google Docs and GitHub**
+as first-class agent tools. Extensions are optional and loaded safely even when
+no account is connected. Ask `list my connections` at any time to see their
+status.
+
+### Google Workspace — one OAuth connection
+
+1. In Google Cloud Console, enable the **Gmail, Drive, Calendar and Docs APIs**.
+2. Configure the OAuth consent screen and create an OAuth Client ID with type
+   **Desktop app**.
+3. Download its JSON file and add its path to `.env`:
+
+   ```env
+   GOOGLE_CLIENT_SECRET_FILE=C:\path\to\client_secret.json
+   ```
+
+4. Start FRIDAY and say **“connect Google Workspace”**. Your browser asks you
+   to approve the account and returns to a temporary localhost callback.
+
+The grant adds Gmail search/read/draft/send, Drive search/upload/download,
+Calendar list/create, and Docs read/create. The refresh token is stored at
+`memory/connections/google_token.json`, restricted to the current OS user where
+supported, and ignored by Git. Say **“disconnect Google Workspace”** to remove
+FRIDAY's local token. You can revoke the grant completely from your Google
+Account's third-party access page.
+
+> Google may show an “unverified app” warning while your personal OAuth app is
+> in testing. Add your Google account as a test user; never commit the client
+> secret or token files.
+
+### GitHub and local Git
+
+Use a fine-grained GitHub token limited to only the repositories FRIDAY needs:
+
+```env
+GITHUB_TOKEN=github_pat_...
+```
+
+Alternatively, install GitHub CLI and run `gh auth login`; FRIDAY reuses that
+login without copying the token into its configuration. GitHub tools can list
+repositories, issues and pull requests, create issues, and read repository
+files. Existing local Git tools continue to provide status and commits.
+
+Example requests:
+
+```text
+Boss → show unread Gmail from this week
+Boss → draft a reply to message 18c… (do not send it)
+Boss → upload report.docx to my Drive
+Boss → what's on my calendar for the next three days?
+Boss → create a Google Doc called Project Brief with this outline
+Boss → list open issues in owner/repository
+```
+
+---
+
 ## File structure
 
 ```

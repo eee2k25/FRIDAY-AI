@@ -3,6 +3,8 @@
 # Install:  pip install -r requirements.txt
 
 google-genai>=1.0.0        # official Gemini SDK (successor to the deprecated google-generativeai)
+google-api-python-client>=2.149.0  # Gmail, Drive, Calendar and Docs
+google-auth-oauthlib>=1.2.1       # Google installed-app OAuth
 groq>=0.11.0
 python-dotenv>=1.0.0
 requests>=2.32.0

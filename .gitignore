@@ -3,6 +3,9 @@ venv/
 __pycache__/
 *.pyc
 memory/*.db
+# OAuth refresh tokens and downloaded client credentials
+memory/connections/
+client_secret*.json
 logs/*.log
 logs/tmp/
 logs/friday_code_*/
