@@ -48,13 +48,49 @@ def _get(name: str, default: str | None = None) -> str | None:
 #   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
-PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-3.8-flash")
+DEFAULT_PRIMARY_MODEL = "gemini-3.8-flash"
+DEFAULT_FALLBACK_MODELS = "gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile"
+
+# Models Google has retired, mapped to the replacement its 404 names. Anything
+# listed here is rewritten *at startup* so a stale .env (or an old release you
+# copied forward) can never fail on the very first prompt. Keep this list in
+# sync whenever a 404 "no longer available to new users" shows up — and never
+# ship a default or docs example that points at a key in this dict.
+MODEL_REMAPS: list[tuple[str, str]] = []
+
+RETIRED_MODELS = {
+    "gemini-1.5-flash": "gemini-3.5-flash-lite",
+    "gemini-1.5-pro": "gemini-3.8-flash",
+    "gemini-2.0-flash": "gemini-3.8-flash",
+    "gemini-2.0-flash-exp": "gemini-3.8-flash",
+    "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+    "gemini-2.5-flash": "gemini-3.8-flash",
+    "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+    "gemini-2.5-pro": "gemini-3.8-flash",
+}
+
+
+def resolve_model(name: str) -> str:
+    """Map a retired model name onto its current replacement (case-insensitive).
+
+    Provider-prefixed names (groq/..., openrouter/...) are returned untouched —
+    the retirement list only covers Google's Gemini namespace.
+    """
+    clean = (name or "").strip()
+    key = clean.lower().removeprefix("models/")
+    replacement = RETIRED_MODELS.get(key)
+    if not replacement or replacement == clean:
+        return clean
+    # The logger does not exist yet at import time, so remaps are recorded here
+    # and flushed once logging is configured (see below).
+    MODEL_REMAPS.append((clean, replacement))
+    return replacement
+
+
+PRIMARY_MODEL = resolve_model(_get("GEMINI_MODEL", DEFAULT_PRIMARY_MODEL))
 FALLBACK_MODELS = [
-    m.strip()
-    for m in _get(
-        "GEMINI_FALLBACK_MODELS",
-        "gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile",
-    ).split(",")
+    resolve_model(m)
+    for m in _get("GEMINI_FALLBACK_MODELS", DEFAULT_FALLBACK_MODELS).split(",")
     if m.strip()
 ]
 
@@ -118,3 +154,8 @@ def _setup_logger() -> logging.Logger:
 
 
 logger = _setup_logger()
+
+for _old_model, _new_model in MODEL_REMAPS:
+    logger.warning(
+        "model %s has been retired by Google — using %s instead", _old_model, _new_model
+    )

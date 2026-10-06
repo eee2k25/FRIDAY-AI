@@ -51,6 +51,11 @@ def _banner(console: Console, tool_count: int, status: dict) -> None:
     )
     console.print(BANNER)
     console.print(Panel(body, box=box.DOUBLE_EDGE, border_style="cyan", width=70))
+    for old_model, new_model in config.MODEL_REMAPS:
+        console.print(
+            f"[yellow]note:[/yellow] [cyan]{old_model}[/cyan] was retired by Google — "
+            f"using [cyan]{new_model}[/cyan] instead. Update your .env to silence this."
+        )
 
 
 def main() -> None:

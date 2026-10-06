@@ -12,7 +12,7 @@ from core.llm_engine import LLMEngine, LLMError
 @pytest.mark.parametrize(
     "model,provider",
     [
-        ("gemini-2.5-flash", "gemini"),
+        ("gemini-3.8-flash", "gemini"),
         ("groq/llama-3.3-70b-versatile", "groq"),
         ("openrouter/meta-llama/llama-3.3-70b-instruct", "openrouter"),
         ("together/meta-llama/Llama-3.3-70B-Instruct-Turbo", "together"),

@@ -42,7 +42,9 @@ class LLMEngine:
         """Strip whitespace and Groq UI labels like ' - on_demand' from model names."""
         m = m.strip()
         m = re.sub(r"\s*[-–]\s*on[_ ]?demand$", "", m, flags=re.IGNORECASE)
-        return m.strip()
+        # Retired Gemini names are swapped for their replacement before they ever
+        # reach the API, so a stale .env or `model <old-name>` cannot 404.
+        return config.resolve_model(m.strip())
 
     @staticmethod
     def _suggested_replacement(err: Exception, model: str) -> str | None:
@@ -158,6 +160,9 @@ class LLMEngine:
                     self._chain[idx] = (replacement, provider)
                     if self._normalize_model(config.PRIMARY_MODEL) == model_name:
                         config.PRIMARY_MODEL = replacement
+                    # Remember it for the rest of the process: later chain
+                    # rebuilds and `model <name>` switches skip the dead name.
+                    config.RETIRED_MODELS[model_name.lower()] = replacement
                     config.logger.warning(
                         "model %s was delisted — retrying with %s", model_name, replacement
                     )

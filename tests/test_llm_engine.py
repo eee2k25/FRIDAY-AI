@@ -14,11 +14,11 @@ def keys(monkeypatch):
 
 
 def test_chain_built_from_primary_and_fallbacks(keys, monkeypatch):
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/llama-3.3-70b-versatile"])
     engine = LLMEngine()
     assert engine.get_model_status()["chain"] == [
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
         "groq/llama-3.3-70b-versatile",
     ]
 
@@ -26,21 +26,21 @@ def test_chain_built_from_primary_and_fallbacks(keys, monkeypatch):
 def test_models_without_a_key_are_dropped(monkeypatch):
     monkeypatch.setattr(config, "GEMINI_API_KEY", None)
     monkeypatch.setattr(config, "GROQ_API_KEY", "groq-key")
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/llama-3.3-70b-versatile"])
     assert LLMEngine().get_model_status()["chain"] == ["groq/llama-3.3-70b-versatile"]
 
 
 def test_duplicates_collapse(keys, monkeypatch):
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", ["gemini-2.5-flash", " gemini-2.5-flash "])
-    assert LLMEngine().get_model_status()["chain"] == ["gemini-2.5-flash"]
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", ["gemini-3.8-flash", " gemini-3.8-flash "])
+    assert LLMEngine().get_model_status()["chain"] == ["gemini-3.8-flash"]
 
 
 @pytest.mark.parametrize(
     "raw,clean",
     [
-        ("  gemini-2.5-flash ", "gemini-2.5-flash"),
+        ("  gemini-3.8-flash ", "gemini-3.8-flash"),
         ("groq/llama-3.3-70b-versatile - on_demand", "groq/llama-3.3-70b-versatile"),
         ("groq/llama3 – On Demand", "groq/llama3"),
     ],
@@ -57,7 +57,7 @@ def test_chat_without_keys_raises(monkeypatch):
 
 
 def test_chat_falls_back_to_the_next_model(keys, monkeypatch):
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/llama-3.3-70b-versatile"])
     engine = LLMEngine()
 
@@ -74,7 +74,7 @@ def test_chat_falls_back_to_the_next_model(keys, monkeypatch):
 
 
 def test_chat_raises_when_every_model_fails(keys, monkeypatch):
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/x"])
     engine = LLMEngine()
 
@@ -89,11 +89,11 @@ def test_chat_raises_when_every_model_fails(keys, monkeypatch):
 
 
 def test_set_primary_model_rebuilds_the_chain(keys, monkeypatch):
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", [])
     engine = LLMEngine()
-    engine.set_primary_model("gemini-2.5-pro")
-    assert engine.get_model_status()["active_model"] == "gemini-2.5-pro"
+    engine.set_primary_model("gemini-3.8-pro")
+    assert engine.get_model_status()["active_model"] == "gemini-3.8-pro"
 
 
 def test_openai_translation_pairs_calls_with_responses(keys, monkeypatch):
@@ -118,34 +118,57 @@ def test_openai_translation_pairs_calls_with_responses(keys, monkeypatch):
 
 DELISTED_404 = (
     "404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model "
-    "models/gemini-2.5-flash is no longer available to new users. Please update "
+    "models/gemini-9.9-flash is no longer available to new users. Please update "
     "your code to use models/gemini-3.8-flash for the latest features.', "
     "'status': 'NOT_FOUND'}}"
 )
 
 
 def test_delisted_model_404_is_remapped_and_retried(keys, monkeypatch):
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "RETIRED_MODELS", dict(config.RETIRED_MODELS))
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-9.9-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", [])
     engine = LLMEngine()
     seen: list[str] = []
 
     def gemini(messages, declarations, model_name):
         seen.append(model_name)
-        if model_name == "gemini-2.5-flash":
+        if model_name == "gemini-9.9-flash":
             raise RuntimeError(DELISTED_404)
         yield ("text", "ok")
 
     monkeypatch.setattr(engine, "_gemini_stream", gemini)
     assert list(engine.chat([{"role": "user", "content": "hi"}], [])) == [("text", "ok")]
-    assert seen == ["gemini-2.5-flash", "gemini-3.8-flash"]
+    assert seen == ["gemini-9.9-flash", "gemini-3.8-flash"]
     assert engine.get_model_status()["chain"] == ["gemini-3.8-flash"]
     assert config.PRIMARY_MODEL == "gemini-3.8-flash"
 
 
 def test_remap_only_applies_to_delisting_errors(keys, monkeypatch):
-    assert LLMEngine._suggested_replacement(RuntimeError("503 busy"), "gemini-2.5-flash") is None
+    assert LLMEngine._suggested_replacement(RuntimeError("503 busy"), "gemini-9.9-flash") is None
     assert (
-        LLMEngine._suggested_replacement(RuntimeError(DELISTED_404), "gemini-2.5-flash")
+        LLMEngine._suggested_replacement(RuntimeError(DELISTED_404), "gemini-9.9-flash")
         == "gemini-3.8-flash"
     )
+
+
+def test_retired_names_are_rewritten_before_any_api_call(keys, monkeypatch):
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", ["gemini-2.5-flash-lite"])
+    assert LLMEngine().get_model_status()["chain"] == [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+    ]
+
+
+def test_model_command_with_a_retired_name_is_corrected(keys, monkeypatch):
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    engine = LLMEngine()
+    engine.set_primary_model("gemini-2.5-pro")
+    assert engine.get_model_status()["active_model"] == "gemini-3.8-flash"
+
+
+def test_no_shipped_default_points_at_a_retired_model():
+    defaults = [config.DEFAULT_PRIMARY_MODEL, *config.DEFAULT_FALLBACK_MODELS.split(",")]
+    assert not [m for m in defaults if m.strip().lower() in config.RETIRED_MODELS]

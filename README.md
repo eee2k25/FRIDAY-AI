@@ -30,8 +30,10 @@ exists — file written, report created — not until she gets stuck.
 > **Model-name note (refinement):** Google keeps delisting older names —
 > `gemini-2.0-flash-exp`, `gemini-1.5-flash`, and now the whole `gemini-2.5-*`
 > line (404 `no longer available to new users`). Defaults in `config.py` now
-> point at the current models, and the engine auto-retries with whatever
-> replacement Google names in the 404. To pin them yourself in `.env`:
+> point at the current models. On top of that, every retired name is listed in
+> `config.RETIRED_MODELS` and rewritten **at startup**, and if Google retires
+> something new the engine reads the replacement out of the 404 and retries.
+> To pin models yourself in `.env`:
 >
 > ```
 > GEMINI_MODEL=gemini-3.8-flash
@@ -435,7 +437,7 @@ loop end-to-end using a mock LLM.
 | Symptom | Fix |
 |---|---|
 | `No API keys found` banner | Fill `GEMINI_API_KEY` in `.env`, restart |
-| `404 … no longer available` from Gemini | FRIDAY auto-retries with the replacement Google suggests; to pin it, set `GEMINI_MODEL=gemini-3.8-flash` in `.env` |
+| `404 … no longer available` from Gemini | Retired names are rewritten automatically (startup + on-404 retry); to pin one, set `GEMINI_MODEL=gemini-3.8-flash` in `.env` |
 | Gemini rate limits | Fallback chain auto-switches; add `GROQ_API_KEY` for resilience |
 | `413 … tokens per minute (TPM)` from Groq | Your Groq org is on the **on-demand tier (8k TPM)**. FRIDAY auto-trims the context and retries; for heavy work, stay on Gemini or upgrade Groq to Dev tier |
 | `pip install ddgs` on Python 3.13 | Use `ddgs` (not `duckduckgo-search`, which is 3.12-only/deprecated) |
