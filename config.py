@@ -36,21 +36,24 @@ def _get(name: str, default: str | None = None) -> str | None:
 
 
 # ------------------------------------------------------------- models ---
-# Defaults track currently-served model names. The old gemini-2.0-flash-exp /
-# gemini-1.5-flash defaults were delisted by Google and made a fresh clone fail
-# on the very first prompt. Override either value in .env.
+# Defaults track currently-served model names. Google periodically delists older
+# names (gemini-2.0-flash-exp, gemini-1.5-flash, and now the gemini-2.5-* line),
+# which made a fresh clone fail with a 404 on the very first prompt. Override
+# either value in .env. The engine also self-heals: if Google answers 404 with a
+# "please use models/X" hint, that replacement is swapped into the chain and the
+# request is retried automatically.
 #
 # Model names may be prefixed with a provider:
-#   (no prefix)   → Google Gemini        e.g. gemini-2.5-flash
+#   (no prefix)   → Google Gemini        e.g. gemini-3.8-flash
 #   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
-PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-2.5-flash")
+PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-3.8-flash")
 FALLBACK_MODELS = [
     m.strip()
     for m in _get(
         "GEMINI_FALLBACK_MODELS",
-        "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile",
+        "gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile",
     ).split(",")
     if m.strip()
 ]

@@ -114,3 +114,38 @@ def test_openai_translation_pairs_calls_with_responses(keys, monkeypatch):
     tool = next(m for m in out if m["role"] == "tool")
     assert tool["tool_call_id"] == assistant["tool_calls"][0]["id"]
     assert "DATA" in tool["content"]
+
+
+DELISTED_404 = (
+    "404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model "
+    "models/gemini-2.5-flash is no longer available to new users. Please update "
+    "your code to use models/gemini-3.8-flash for the latest features.', "
+    "'status': 'NOT_FOUND'}}"
+)
+
+
+def test_delisted_model_404_is_remapped_and_retried(keys, monkeypatch):
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    engine = LLMEngine()
+    seen: list[str] = []
+
+    def gemini(messages, declarations, model_name):
+        seen.append(model_name)
+        if model_name == "gemini-2.5-flash":
+            raise RuntimeError(DELISTED_404)
+        yield ("text", "ok")
+
+    monkeypatch.setattr(engine, "_gemini_stream", gemini)
+    assert list(engine.chat([{"role": "user", "content": "hi"}], [])) == [("text", "ok")]
+    assert seen == ["gemini-2.5-flash", "gemini-3.8-flash"]
+    assert engine.get_model_status()["chain"] == ["gemini-3.8-flash"]
+    assert config.PRIMARY_MODEL == "gemini-3.8-flash"
+
+
+def test_remap_only_applies_to_delisting_errors(keys, monkeypatch):
+    assert LLMEngine._suggested_replacement(RuntimeError("503 busy"), "gemini-2.5-flash") is None
+    assert (
+        LLMEngine._suggested_replacement(RuntimeError(DELISTED_404), "gemini-2.5-flash")
+        == "gemini-3.8-flash"
+    )

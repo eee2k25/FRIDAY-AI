@@ -45,6 +45,27 @@ class LLMEngine:
         return m.strip()
 
     @staticmethod
+    def _suggested_replacement(err: Exception, model: str) -> str | None:
+        """Pull the replacement model out of a Google "no longer available" 404.
+
+        Google's delisting error reads: `This model models/gemini-2.5-flash is no
+        longer available ... Please update your code to use models/gemini-3.8-flash`.
+        Returning that name lets the engine re-point the chain instead of burning
+        the whole fallback list on a dead model name.
+        """
+        text = str(err)
+        if "404" not in text and "NOT_FOUND" not in text:
+            return None
+        m = re.search(
+            r"(?:update your code to use|use|try)\s+(?:the\s+)?models/([A-Za-z0-9.\-_]+)",
+            text,
+        )
+        if not m:
+            return None
+        new = m.group(1).rstrip(".,'\")")
+        return new if new and new != model else None
+
+    @staticmethod
     def _provider_for(model: str) -> str:
         """Map a model name to its provider from the optional prefix."""
         low = model.lower()
@@ -110,6 +131,7 @@ class LLMEngine:
             raise LLMError("No API keys configured. Put GEMINI_API_KEY and/or GROQ_API_KEY in .env")
         errors: list[str] = []
         attempts = 0
+        remaps = 0
         while attempts <= len(self._chain):
             idx = (self._model_index + attempts) % len(self._chain)
             model_name, provider = self._chain[idx]
@@ -128,6 +150,19 @@ class LLMEngine:
                 self._last_error = None
                 return
             except Exception as e:  # noqa: BLE001 — any API failure triggers fallback
+                replacement = (
+                    self._suggested_replacement(e, model_name) if remaps < len(self._chain) else None
+                )
+                if replacement:
+                    remaps += 1
+                    self._chain[idx] = (replacement, provider)
+                    if self._normalize_model(config.PRIMARY_MODEL) == model_name:
+                        config.PRIMARY_MODEL = replacement
+                    config.logger.warning(
+                        "model %s was delisted — retrying with %s", model_name, replacement
+                    )
+                    errors.append(f"{model_name}: delisted, retried as {replacement}")
+                    continue
                 line = f"{model_name}: {type(e).__name__}: {e}"
                 self._last_error = line
                 errors.append(line)

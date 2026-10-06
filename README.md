@@ -27,13 +27,15 @@ exists — file written, report created — not until she gets stuck.
 | Docs       | python-docx (Word) · openpyxl (Excel) · pdfplumber/PyPDF2 (PDF) |
 | Math       | AST-safe calculator + sympy (equations) + pint (units)      |
 
-> **Model-name note (refinement):** Google has delisted `gemini-2.0-flash-exp`
-> and `gemini-1.5-flash`. The defaults in `config.py` keep the original spec
-> intact, but you almost certainly want to set current names in `.env`:
+> **Model-name note (refinement):** Google keeps delisting older names —
+> `gemini-2.0-flash-exp`, `gemini-1.5-flash`, and now the whole `gemini-2.5-*`
+> line (404 `no longer available to new users`). Defaults in `config.py` now
+> point at the current models, and the engine auto-retries with whatever
+> replacement Google names in the 404. To pin them yourself in `.env`:
 >
 > ```
-> GEMINI_MODEL=gemini-2.5-flash
-> GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile
+> GEMINI_MODEL=gemini-3.8-flash
+> GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile
 > ```
 >
 > Or switch at runtime with the `model <name>` console command.
@@ -106,8 +108,8 @@ New-Item -ItemType Directory -Force -Path "core","tools","memory","logs"
 Copy-Item .env.example .env
 notepad .env
 # (or, if you already have .env — add any missing keys, then:)
-#   GEMINI_MODEL=gemini-2.5-flash
-#   GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile
+#   GEMINI_MODEL=gemini-3.8-flash
+#   GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile
 
 # Step 7 — run
 python friday.py
@@ -279,13 +281,13 @@ missing are silently skipped, so you can list more than you have keys for.
 
 | Prefix | Provider | Example |
 |---|---|---|
-| *(none)* | Google Gemini | `gemini-2.5-flash` |
+| *(none)* | Google Gemini | `gemini-3.8-flash` |
 | `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
 | `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
 | `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 
 ```env
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-3.3-70b-instruct
 ```
 
@@ -433,7 +435,7 @@ loop end-to-end using a mock LLM.
 | Symptom | Fix |
 |---|---|
 | `No API keys found` banner | Fill `GEMINI_API_KEY` in `.env`, restart |
-| `404 model not found` from Gemini | Set `GEMINI_MODEL=gemini-2.5-flash` in `.env` (delisted model name) |
+| `404 … no longer available` from Gemini | FRIDAY auto-retries with the replacement Google suggests; to pin it, set `GEMINI_MODEL=gemini-3.8-flash` in `.env` |
 | Gemini rate limits | Fallback chain auto-switches; add `GROQ_API_KEY` for resilience |
 | `413 … tokens per minute (TPM)` from Groq | Your Groq org is on the **on-demand tier (8k TPM)**. FRIDAY auto-trims the context and retries; for heavy work, stay on Gemini or upgrade Groq to Dev tier |
 | `pip install ddgs` on Python 3.13 | Use `ddgs` (not `duckduckgo-search`, which is 3.12-only/deprecated) |
