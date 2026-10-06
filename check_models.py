@@ -6,7 +6,7 @@ Run it from the FRIDAY folder:
     python check_models.py --groq          # Groq only
     python check_models.py --gemini        # Gemini only
     python check_models.py --all           # test every model the keys list
-    python check_models.py groq/llama-3.3-70b-versatile gemini-3.8-flash
+    python check_models.py groq/openai/gpt-oss-120b gemini-3.8-flash
 
 Each candidate gets a real one-token completion, so a model is only reported
 OK if it genuinely works with *your* key — listing alone is not enough, some
@@ -36,13 +36,15 @@ only_groq = "--groq" in flags
 only_gemini = "--gemini" in flags
 
 GEMINI_CANDIDATES = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.8-pro"]
+# Verified against a live Groq key (Oct 2026). The llama-3.x ids Groq used to
+# serve are gone from new accounts, so they are not probed by default — pass
+# them on the command line if your account still has them.
 GROQ_CANDIDATES = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
-    "moonshotai/kimi-k2-instruct",
-    "qwen/qwen3-32b",
+    "openai/gpt-oss-safeguard-20b",
+    "qwen/qwen3.8-27b",
+    "allam-2-7b",
 ]
 
 working: list[str] = []
@@ -83,7 +85,7 @@ def check_groq() -> None:
             r = client.chat.completions.create(
                 model=name,
                 messages=[{"role": "user", "content": "say ok"}],
-                max_tokens=5,
+                max_tokens=64,
             )
             text = (r.choices[0].message.content or "").strip().replace("\n", " ")[:40]
             print(f"  OK    groq/{name}  -> {text}")

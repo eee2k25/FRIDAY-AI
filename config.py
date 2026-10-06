@@ -45,12 +45,18 @@ def _get(name: str, default: str | None = None) -> str | None:
 #
 # Model names may be prefixed with a provider:
 #   (no prefix)   → Google Gemini        e.g. gemini-3.8-flash
-#   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
+#   groq/         → Groq                 e.g. groq/openai/gpt-oss-120b
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
 DEFAULT_PRIMARY_MODEL = "gemini-3.8-flash"
-DEFAULT_FALLBACK_MODELS = "gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile"
+DEFAULT_FALLBACK_MODELS = (
+    "gemini-3.5-flash-lite,groq/openai/gpt-oss-120b,groq/openai/gpt-oss-20b"
+)
 
+# Groq note: the llama-3.x ids FRIDAY used to default to are no longer served
+# to new Groq accounts (they do not even appear in /v1/models), so the Groq
+# fallbacks below are the openai/gpt-oss-* ids verified against a live key.
+#
 # Models Google has retired, mapped to the replacement its 404 names. Anything
 # listed here is rewritten *at startup* so a stale .env (or an old release you
 # copied forward) can never fail on the very first prompt. Keep this list in

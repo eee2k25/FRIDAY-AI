@@ -13,7 +13,7 @@ from core.llm_engine import LLMEngine, LLMError
     "model,provider",
     [
         ("gemini-3.8-flash", "gemini"),
-        ("groq/llama-3.3-70b-versatile", "groq"),
+        ("groq/openai/gpt-oss-120b", "groq"),
         ("openrouter/meta-llama/llama-3.3-70b-instruct", "openrouter"),
         ("together/meta-llama/Llama-3.3-70B-Instruct-Turbo", "together"),
         ("GROQ/Llama3", "groq"),

@@ -15,11 +15,11 @@ def keys(monkeypatch):
 
 def test_chain_built_from_primary_and_fallbacks(keys, monkeypatch):
     monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/llama-3.3-70b-versatile"])
+    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/openai/gpt-oss-120b"])
     engine = LLMEngine()
     assert engine.get_model_status()["chain"] == [
         "gemini-3.8-flash",
-        "groq/llama-3.3-70b-versatile",
+        "groq/openai/gpt-oss-120b",
     ]
 
 
@@ -27,8 +27,8 @@ def test_models_without_a_key_are_dropped(monkeypatch):
     monkeypatch.setattr(config, "GEMINI_API_KEY", None)
     monkeypatch.setattr(config, "GROQ_API_KEY", "groq-key")
     monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/llama-3.3-70b-versatile"])
-    assert LLMEngine().get_model_status()["chain"] == ["groq/llama-3.3-70b-versatile"]
+    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/openai/gpt-oss-120b"])
+    assert LLMEngine().get_model_status()["chain"] == ["groq/openai/gpt-oss-120b"]
 
 
 def test_duplicates_collapse(keys, monkeypatch):
@@ -41,7 +41,7 @@ def test_duplicates_collapse(keys, monkeypatch):
     "raw,clean",
     [
         ("  gemini-3.8-flash ", "gemini-3.8-flash"),
-        ("groq/llama-3.3-70b-versatile - on_demand", "groq/llama-3.3-70b-versatile"),
+        ("groq/openai/gpt-oss-120b - on_demand", "groq/openai/gpt-oss-120b"),
         ("groq/llama3 – On Demand", "groq/llama3"),
     ],
 )
@@ -58,7 +58,7 @@ def test_chat_without_keys_raises(monkeypatch):
 
 def test_chat_falls_back_to_the_next_model(keys, monkeypatch):
     monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-3.8-flash")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/llama-3.3-70b-versatile"])
+    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/openai/gpt-oss-120b"])
     engine = LLMEngine()
 
     def dead_gemini(*a, **k):

@@ -19,7 +19,7 @@ exists — file written, report created — not until she gets stuck.
 | Layer      | Implementation                                              |
 |------------|-------------------------------------------------------------|
 | Primary LLM| Gemini 2.5 Flash (`google-genai` SDK — the official successor, streaming) |
-| Fallbacks  | Gemini 1.5 Flash → Groq `llama-3.3-70b-versatile` (auto-switch on API errors) |
+| Fallbacks  | Gemini Flash Lite → Groq `openai/gpt-oss-120b` → `openai/gpt-oss-20b` (auto-switch on API errors) |
 | Agent loop | ReAct with native function calling, max 15 iterations       |
 | Memory     | SQLite (`memory/friday_memory.db`) — conversations, facts, tasks, tool usage |
 | Console    | Rich — streaming output, tool-call styling, Markdown reports |
@@ -37,7 +37,7 @@ exists — file written, report created — not until she gets stuck.
 >
 > ```
 > GEMINI_MODEL=gemini-3.8-flash
-> GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile
+> GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,groq/openai/gpt-oss-120b
 > ```
 >
 > Or switch at runtime with the `model <name>` console command.
@@ -111,7 +111,7 @@ Copy-Item .env.example .env
 notepad .env
 # (or, if you already have .env — add any missing keys, then:)
 #   GEMINI_MODEL=gemini-3.8-flash
-#   GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile
+#   GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,groq/openai/gpt-oss-120b
 
 # Step 7 — run
 python friday.py
@@ -284,13 +284,13 @@ missing are silently skipped, so you can list more than you have keys for.
 | Prefix | Provider | Example |
 |---|---|---|
 | *(none)* | Google Gemini | `gemini-3.8-flash` |
-| `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
+| `groq/` | Groq | `groq/openai/gpt-oss-120b` |
 | `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
 | `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 
 ```env
 GEMINI_MODEL=gemini-3.8-flash
-GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-3.3-70b-instruct
+GEMINI_FALLBACK_MODELS=groq/openai/gpt-oss-120b,openrouter/meta-llama/llama-3.3-70b-instruct
 ```
 
 ---
@@ -437,6 +437,7 @@ loop end-to-end using a mock LLM.
 | Symptom | Fix |
 |---|---|
 | `No API keys found` banner | Fill `GEMINI_API_KEY` in `.env`, restart |
+| `403 Your project has been denied access` from Gemini | Key/project problem, not a model one. Key must start with `AIza` (get one at aistudio.google.com/apikey). Blocked either way? Run Groq-only: `GEMINI_MODEL=groq/openai/gpt-oss-120b` |
 | `404 … no longer available` from Gemini | Retired names are rewritten automatically (startup + on-404 retry); to pin one, set `GEMINI_MODEL=gemini-3.8-flash` in `.env` |
 | Gemini rate limits | Fallback chain auto-switches; add `GROQ_API_KEY` for resilience |
 | `413 … tokens per minute (TPM)` from Groq | Your Groq org is on the **on-demand tier (8k TPM)**. FRIDAY auto-trims the context and retries; for heavy work, stay on Gemini or upgrade Groq to Dev tier |
