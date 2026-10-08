@@ -14,6 +14,8 @@ from core.llm_engine import LLMEngine, LLMError
     [
         ("gemini-2.5-flash", "gemini"),
         ("ollama/llama3.2", "ollama"),
+        ("ollama/deepseek-r1:7b", "ollama"),
+        ("ollama/qwen2.5:7b", "ollama"),
         ("ollama", "ollama"),
         ("groq/llama-3.3-70b-versatile", "groq"),
         ("openrouter/meta-llama/llama-3.3-70b-instruct", "openrouter"),
@@ -23,6 +25,76 @@ from core.llm_engine import LLMEngine, LLMError
 )
 def test_provider_detection(model, provider):
     assert LLMEngine._provider_for(model) == provider
+
+
+def test_friday_model_takes_precedence_over_gemini_model(monkeypatch):
+    monkeypatch.setenv("FRIDAY_MODEL", "ollama/deepseek-r1:7b")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    assert config._get_preferred("FRIDAY_MODEL", "GEMINI_MODEL", "default") == (
+        "ollama/deepseek-r1:7b"
+    )
+
+
+def test_gemini_model_remains_a_legacy_fallback(monkeypatch):
+    monkeypatch.delenv("FRIDAY_MODEL", raising=False)
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    assert config._get_preferred("FRIDAY_MODEL", "GEMINI_MODEL", "default") == (
+        "gemini-2.5-flash"
+    )
+
+
+def test_present_empty_friday_model_still_takes_precedence(monkeypatch):
+    monkeypatch.setenv("FRIDAY_MODEL", "")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    assert config._get_preferred("FRIDAY_MODEL", "GEMINI_MODEL", "default") == ""
+
+
+def test_friday_fallbacks_take_precedence_even_when_empty(monkeypatch):
+    monkeypatch.setenv("FRIDAY_FALLBACK_MODELS", "")
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "groq/llama")
+    assert config._get_preferred_csv(
+        "FRIDAY_FALLBACK_MODELS", "GEMINI_FALLBACK_MODELS", "default/model"
+    ) == []
+
+
+def test_both_empty_fallback_variables_leave_ollama_as_the_only_model(monkeypatch):
+    monkeypatch.setenv("FRIDAY_MODEL", "ollama/llama3.2")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("FRIDAY_FALLBACK_MODELS", "")
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "")
+    monkeypatch.setattr(
+        config,
+        "PRIMARY_MODEL",
+        config._get_preferred("FRIDAY_MODEL", "GEMINI_MODEL", "gemini-2.5-flash"),
+    )
+    monkeypatch.setattr(
+        config,
+        "FALLBACK_MODELS",
+        config._get_preferred_csv(
+            "FRIDAY_FALLBACK_MODELS",
+            "GEMINI_FALLBACK_MODELS",
+            "gemini-lite,groq/llama",
+        ),
+    )
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
+    for name in (
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+        "TOGETHER_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.setattr(config, name, None)
+
+    assert LLMEngine().get_model_status()["chain"] == ["ollama/llama3.2"]
+
+
+def test_gemini_fallbacks_remain_a_legacy_fallback(monkeypatch):
+    monkeypatch.delenv("FRIDAY_FALLBACK_MODELS", raising=False)
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "groq/llama")
+    assert config._get_preferred_csv(
+        "FRIDAY_FALLBACK_MODELS", "GEMINI_FALLBACK_MODELS", "default/model"
+    ) == ["groq/llama"]
 
 
 def test_openrouter_model_joins_the_chain_when_keyed(monkeypatch):
@@ -46,6 +118,7 @@ def test_ollama_joins_the_chain_without_any_external_api_key(monkeypatch):
         "OPENAI_API_KEY",
     ):
         monkeypatch.setattr(config, name, None)
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
     monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
     monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
     monkeypatch.setattr(config, "FALLBACK_MODELS", [])
@@ -54,6 +127,13 @@ def test_ollama_joins_the_chain_without_any_external_api_key(monkeypatch):
 
     assert status["chain"] == ["ollama/llama3.2"]
     assert status["provider"] == "ollama"
+
+
+def test_disabled_ollama_is_skipped(monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", False)
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    assert LLMEngine().get_model_status()["chain"] == []
 
 
 def test_ollama_shorthand_uses_the_configured_model(monkeypatch):
@@ -106,6 +186,7 @@ def _patch_post(monkeypatch, response, captured=None):
 
 @pytest.fixture()
 def ollama_engine(monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
     monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
     monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
     monkeypatch.setattr(config, "GEMINI_API_KEY", None)
@@ -165,6 +246,100 @@ def test_ollama_endpoint_adds_v1_for_a_server_root(ollama_engine, monkeypatch):
     assert ollama_engine._endpoint_for("ollama") == (
         "http://ollama.local:11434/v1/chat/completions"
     )
+
+
+@pytest.mark.parametrize(
+    "model_name,model_id",
+    [
+        ("ollama/llama3.2", "llama3.2"),
+        ("ollama/deepseek-r1:7b", "deepseek-r1:7b"),
+        ("ollama/qwen2.5:7b", "qwen2.5:7b"),
+    ],
+)
+def test_ollama_extracts_model_tag_and_sends_no_auth(
+    ollama_engine, monkeypatch, model_name, model_id
+):
+    captured = {}
+    _patch_post(monkeypatch, FakeResponse(["data: [DONE]"]), captured)
+
+    list(ollama_engine._openai_compatible_stream([], [], model_name, "ollama"))
+
+    assert captured["url"] == "http://ollama.local:11434/v1/chat/completions"
+    assert captured["json"]["model"] == model_id
+    assert "Authorization" not in captured["headers"]
+
+
+def test_ollama_streams_text(ollama_engine, monkeypatch):
+    lines = [_delta(content="local response").encode("utf-8"), "data: [DONE]"]
+    _patch_post(monkeypatch, FakeResponse(lines))
+    assert list(
+        ollama_engine._openai_compatible_stream(
+            [{"role": "user", "content": "hi"}], [], "ollama/llama3.2", "ollama"
+        )
+    ) == [("text", "local response")]
+
+
+def test_ollama_connection_error_suggests_server_command_and_url(ollama_engine, monkeypatch):
+    import requests
+
+    def fail_post(*_args, **_kwargs):
+        raise requests.exceptions.ConnectionError("connection refused")
+
+    monkeypatch.setattr(requests, "post", fail_post)
+    with pytest.raises(LLMError) as exc_info:
+        list(ollama_engine._openai_compatible_stream([], [], "ollama/llama3.2", "ollama"))
+    message = str(exc_info.value)
+    assert "ollama serve" in message
+    assert config.OLLAMA_BASE_URL in message
+
+
+def test_ollama_missing_model_suggests_list_and_pull(ollama_engine, monkeypatch):
+    _patch_post(
+        monkeypatch,
+        FakeResponse([], status_code=404, text='model "deepseek-r1:7b" not found'),
+    )
+    with pytest.raises(LLMError) as exc_info:
+        list(
+            ollama_engine._openai_compatible_stream(
+                [], [], "ollama/deepseek-r1:7b", "ollama"
+            )
+        )
+    message = str(exc_info.value)
+    assert "ollama list" in message
+    assert "ollama pull deepseek-r1:7b" in message
+    assert config.OLLAMA_BASE_URL in message
+
+
+def test_ollama_413_is_size_error_not_rate_limit(ollama_engine, monkeypatch):
+    _patch_post(
+        monkeypatch,
+        FakeResponse(
+            [],
+            status_code=413,
+            text='{"error":{"message":"request too large","code":"rate_limit_exceeded"}}',
+        ),
+    )
+    with pytest.raises(LLMError) as exc_info:
+        list(ollama_engine._openai_compatible_stream([], [], "ollama/llama3.2", "ollama"))
+    message = str(exc_info.value).lower()
+    assert "http 413" in message
+    assert "oversized request" in message
+    assert "not an ordinary rate limit" in message
+
+
+def test_ollama_413_does_not_retry_same_request(ollama_engine, monkeypatch):
+    import requests
+
+    calls = []
+
+    def reject_as_too_large(*_args, **_kwargs):
+        calls.append(1)
+        return FakeResponse([], status_code=413, text="request too large")
+
+    monkeypatch.setattr(requests, "post", reject_as_too_large)
+    with pytest.raises(LLMError, match="not retrying it unchanged"):
+        list(ollama_engine.chat([{"role": "user", "content": "large"}], []))
+    assert len(calls) == 1
 
 
 def test_openai_compatible_stream_yields_text(or_engine, monkeypatch):

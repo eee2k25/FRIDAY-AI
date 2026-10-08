@@ -179,6 +179,38 @@ def test_groq_413_takes_diet_path_not_rate_limit_retry(tmp_memory, big_registry,
     assert sum(len(str(m.get("content", ""))) for m in msgs) <= 2000
 
 
+def test_emergency_diet_trims_a_very_long_original_user_request():
+    messages = [{"role": "user", "content": "x" * 5000}]
+    diet = AgentLoop._emergency_diet(messages, cap=1500)
+    assert len(diet[0]["content"]) < 5000
+    assert "emergency request trim" in diet[0]["content"]
+
+
+def test_oversized_request_is_not_retried_when_no_smaller_payload_exists(
+    tmp_memory, big_registry
+):
+    calls = []
+
+    def behavior(messages, declarations):
+        calls.append((messages, declarations))
+        raise LLMError("HTTP 413 request too large")
+        yield  # pragma: no cover
+
+    engine = _Engine(behavior)
+    engine.system_prompt = AgentLoop.EMERGENCY_SYSTEM_PROMPT
+    agent = AgentLoop(engine, big_registry, tmp_memory, persona=lambda **kw: "SYS")
+    messages = [{"role": "user", "content": "already small"}]
+    error = LLMError("HTTP 413 request too large")
+
+    _tb, _calls, returned_error, out_messages, _decls = agent._recover_or_give_up(
+        messages, [], error
+    )
+
+    assert calls == []
+    assert returned_error is error
+    assert out_messages is messages
+
+
 def test_transient_429_still_waits_and_retries(tmp_memory, big_registry, monkeypatch):
     """A genuine 429 (no oversized signals) waits 10s and retries unchanged —
     the request itself is fine, the provider is just busy."""

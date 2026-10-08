@@ -27,18 +27,18 @@ git push -u origin main
 
 ## First Run Setup (do once per Codespace)
 ```bash
-# 1. Create your .env (copy example)
-cp .env.example .env
+# 1. Create your .env only if there is no existing file, then edit it
+[ -f .env ] || cp .env.example .env
 nano .env
-# Paste your GEMINI_API_KEY and GROQ_API_KEY, press Ctrl+O, Enter, Ctrl+X
+# The example is local-only Ollama by default, so no provider API key is needed.
+# Save with Ctrl+O, Enter, Ctrl+X.
 
 # 2. Verify
 python selftest.py
 # Should say: RESULT: 35 passed, 0 failed
 
-# 3. Run FRIDAY
+# 3. Start the selected provider (for Ollama, follow the section below), then run FRIDAY
 python friday.py
-# Banner should show v1.0.4
 ```
 
 ## Daily Use
@@ -71,20 +71,24 @@ Codespace. Its Python devcontainer does not install Ollama by default.
 
    ```bash
    ollama pull llama3.2
-   cp .env.example .env   # only if you do not already have a .env
+   ollama list
+   [ -f .env ] || cp .env.example .env
    nano .env
    ```
 
-   Set the following (no Gemini/Groq key is needed):
+   Use the exact model tag printed by `ollama list`. The local-only example
+   uses these values (no Gemini/Groq key is needed):
 
    ```env
+   OLLAMA_ENABLED=True
    OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
    OLLAMA_MODEL=llama3.2
-   GEMINI_MODEL=ollama/llama3.2
-   GEMINI_FALLBACK_MODELS=
+   FRIDAY_MODEL=ollama/llama3.2
+   FRIDAY_FALLBACK_MODELS=
    ```
 
-4. Run `python friday.py` in that second terminal. The banner should show
+4. Verify `http://127.0.0.1:11434/api/tags` responds, then run
+   `python friday.py` in that second terminal. The banner should show
    `Model: ollama/llama3.2` and `Fallbacks: 0`. Try `hi`.
 
 Keep `OLLAMA_BASE_URL` at `127.0.0.1` when both processes are in the same
@@ -95,11 +99,13 @@ FRIDAY in this Codespace to use Ollama in a different Codespace, use the other
 server's reachable private address instead. Alternatively, run FRIDAY on your
 own computer alongside the Ollama server there.
 
-## Secrets - Better Way (so you don't paste keys every time)
+## Optional cloud-provider secrets
+Only create these Codespaces secrets if you choose to add a cloud provider as a
+fallback. Ollama-only setup does not need them.
+
 In GitHub: Repo `Settings` -> `Secrets and variables` -> `Codespaces` -> `New repository secret`
 - Name: `GEMINI_API_KEY` Value: your key
 - Name: `GROQ_API_KEY` Value: your key
-Create file `.env` once using `${GEMINI_API_KEY}` - or just set env in devcontainer.json remoteEnv.
 
 ## Download Final Zip Anytime
 In Codespace terminal:

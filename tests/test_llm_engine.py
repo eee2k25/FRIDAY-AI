@@ -49,9 +49,12 @@ def test_normalize_model_strips_ui_noise(raw, clean):
     assert LLMEngine._normalize_model(raw) == clean
 
 
-def test_chat_without_keys_raises(monkeypatch):
+def test_chat_without_available_providers_raises(monkeypatch):
     monkeypatch.setattr(config, "GEMINI_API_KEY", None)
     monkeypatch.setattr(config, "GROQ_API_KEY", None)
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", False)
     with pytest.raises(LLMError):
         list(LLMEngine().chat([{"role": "user", "content": "hi"}], []))
 

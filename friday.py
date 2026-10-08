@@ -136,7 +136,7 @@ def main() -> None:
     if not status["chain"]:
         console.print(
             "[red]No usable model configured. Add a provider API key, or set "
-            "GEMINI_MODEL=ollama/llama3.2 for local Ollama.[/red]"
+            "FRIDAY_MODEL=ollama/llama3.2 with OLLAMA_ENABLED=True.[/red]"
         )
     for problem in _sdk_problems():
         console.print(f"[yellow]⚠ {problem}[/yellow]")

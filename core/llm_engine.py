@@ -122,6 +122,9 @@ class LLMEngine:
                 continue
             seen.add(m)
             provider = self._provider_for(m)
+            if provider == "ollama" and not config.OLLAMA_ENABLED:
+                config.logger.debug("skipping %s — Ollama is disabled", m)
+                continue
             if self._requires_api_key(provider) and not self._key_for(provider):
                 config.logger.debug("skipping %s — no API key for provider %s", m, provider)
                 continue
@@ -149,6 +152,25 @@ class LLMEngine:
         self.system_prompt = prompt
 
     # ------------------------------------------------------- public ---
+    @staticmethod
+    def _is_oversized_request_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return any(
+            signal in message
+            for signal in (
+                "http 413",
+                "error code: 413",
+                "request too large",
+                "oversized request",
+                "payload too large",
+                "too many tokens",
+                "context length",
+                "context window",
+                "prompt is too long",
+                "input too long",
+            )
+        )
+
     def chat(self, messages: list[dict], declarations: list[dict]):
         """Yield ("text", str) and ("function_call", {name, args}) events.
 
@@ -166,16 +188,16 @@ class LLMEngine:
                     + " — fix: pip install -r requirements.txt"
                 )
             else:
-                msg += " For example, set GEMINI_MODEL=ollama/llama3.2 in .env."
+                msg += " For example, set FRIDAY_MODEL=ollama/llama3.2 and OLLAMA_ENABLED=True in .env."
             raise LLMError(msg)
         errors: list[str] = []
         attempts = 0
-        # Walk the chain in configured order from a FIXED origin. _model_index
-        # is the sticky "current model" (updated below so the next chat()
-        # resumes at the model that last worked) — mutating it mid-walk made
-        # the fallback order jump (0 → 1 → 3 → 2 …), skipping models out of turn.
+        # Walk each configured provider at most once from a FIXED origin.
+        # _model_index is the sticky "current model" (updated below so the
+        # next chat() resumes at the model that last worked). Retrying the same
+        # provider here is especially harmful for oversized requests (HTTP 413).
         start = self._model_index
-        while attempts <= len(self._chain):
+        while attempts < len(self._chain):
             idx = (start + attempts) % len(self._chain)
             model_name, provider = self._chain[idx]
             self._model_index = idx
@@ -196,6 +218,10 @@ class LLMEngine:
                 line = f"{model_name}: {type(e).__name__}: {e}"
                 self._last_error = line
                 errors.append(line)
+                if self._is_oversized_request_error(e):
+                    message = "Request was too large; not retrying it unchanged. " + line
+                    self._last_error = message
+                    raise LLMError(message) from e
                 config.logger.warning("model %s failed (%s) — trying next in chain", model_name, e)
                 attempts += 1
         raise LLMError("All models in fallback chain failed:\n" + "\n".join(f"  - {e}" for e in errors))
@@ -464,9 +490,57 @@ class LLMEngine:
         if declarations:
             payload["tools"] = [{"type": "function", "function": d} for d in declarations]
 
-        resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        try:
+            resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        except requests.exceptions.RequestException as e:
+            if provider == "ollama":
+                raise LLMError(
+                    f"Cannot reach Ollama at {config.OLLAMA_BASE_URL}. "
+                    "Start the server with `ollama serve` and make sure that URL is "
+                    "reachable from the FRIDAY process."
+                ) from e
+            raise
+
         if resp.status_code >= 400:
-            raise LLMError(f"{provider} HTTP {resp.status_code}: {resp.text[:300]}")
+            response_text = str(getattr(resp, "text", ""))
+            if provider == "ollama":
+                lowered = response_text.lower()
+                too_large = resp.status_code == 413 or any(
+                    signal in lowered
+                    for signal in (
+                        "request too large",
+                        "payload too large",
+                        "too many tokens",
+                        "context length",
+                        "context window",
+                        "prompt is too long",
+                        "input too long",
+                    )
+                )
+                if too_large:
+                    raise LLMError(
+                        f"Ollama rejected an oversized request (HTTP {resp.status_code}) at "
+                        f"{config.OLLAMA_BASE_URL}; this is not an ordinary rate limit. "
+                        f"FRIDAY will trim the request before retrying. Response: {response_text[:300]}"
+                    )
+                model_missing = (
+                    resp.status_code == 404
+                    or "model not found" in lowered
+                    or "model_not_found" in lowered
+                    or "no such model" in lowered
+                )
+                if model_missing:
+                    raise LLMError(
+                        f"Ollama model `{model_id}` was not found at {config.OLLAMA_BASE_URL}. "
+                        f"Check `ollama list`, then run `ollama pull {model_id}`. "
+                        f"Server response: {response_text[:300]}"
+                    )
+                raise LLMError(
+                    f"Ollama HTTP {resp.status_code} at {config.OLLAMA_BASE_URL}. "
+                    "Check that `ollama serve` is running and the configured URL is correct. "
+                    f"Server response: {response_text[:300]}"
+                )
+            raise LLMError(f"{provider} HTTP {resp.status_code}: {response_text[:300]}")
 
         pending: dict[int, dict] = {}
         for raw_line in resp.iter_lines(decode_unicode=True):
