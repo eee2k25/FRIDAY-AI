@@ -4,7 +4,14 @@ FRIDAY binds to localhost by default. Put it behind an authenticated reverse pro
 
 ## Linux systemd
 
-From the repository root, create the virtualenv and install dependencies:
+From the repository root, run the one-shot installer (creates `.venv`, installs
+dependencies, creates `.env`, and installs the global `friday` command):
+
+```sh
+./setup.sh
+```
+
+Or do it by hand:
 
 ```sh
 python3 -m venv .venv

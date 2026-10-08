@@ -229,6 +229,7 @@ class AgentLoop:
     _OVERSIZED_SIGNALS = (
         "413",
         "request too large",
+        "oversized request",
         "too many tokens",
         "tokens per minute",
         "reduce your message size",
@@ -264,6 +265,13 @@ class AgentLoop:
                 last_model_idx = i
         slim: list[dict] = []
         if first_user is not None:
+            original = first_user.get("content", "")
+            if len(original) > cap:
+                first_user = {
+                    **first_user,
+                    "content": original[:cap]
+                    + f"\n... [emergency request trim, {len(original)} chars total]",
+                }
             slim.append(first_user)
         if last_model_idx is not None:
             slim.append(messages[last_model_idx])
@@ -299,12 +307,22 @@ class AgentLoop:
         if any(k in err for k in self._OVERSIZED_SIGNALS):
             self.console.print("[dim]◈ Request too big — trimming tool results and retrying…[/dim]")
             diet = self._diet_messages(messages)
-            result = self._call_llm(diet, declarations)
-            if result[2] is None:
-                return result + (diet, declarations)
-            self.console.print("[dim]◈ Still too big — emergency trim (core tools only)…[/dim]")
+            if diet != messages:
+                result = self._call_llm(diet, declarations)
+                if result[2] is None:
+                    return result + (diet, declarations)
+            else:
+                self.console.print(
+                    "[dim]◈ No tool result could be trimmed; skipping an unchanged retry…[/dim]"
+                )
+
+            self.console.print("[dim]◈ Emergency trim (core tools and shorter context)…[/dim]")
             emergency = self._emergency_diet(diet)
             core_decls = [d for d in declarations if d.get("name") in self.EMERGENCY_TOOLS]
+            prompt_changed = getattr(self.llm, "system_prompt", None) != self.EMERGENCY_SYSTEM_PROMPT
+            request_changed = emergency != diet or core_decls != declarations or prompt_changed
+            if not request_changed:
+                return [], [], stream_error, messages, declarations
             self.llm.set_system_prompt(self.EMERGENCY_SYSTEM_PROMPT)
             result = self._call_llm(emergency, core_decls)
             return result + (emergency, core_decls)

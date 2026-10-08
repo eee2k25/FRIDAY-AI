@@ -80,6 +80,85 @@ def _sdk_problems() -> list[str]:
     return problems
 
 
+def _doctor() -> int:
+    """Offline health check: prints what is configured and what is missing.
+
+    Answers the two questions that actually block a first run — is a model
+    provider reachable, and are the dependencies installed — without sending
+    a single request that costs tokens.
+    """
+    import shutil
+    import sys
+
+    console = Console()
+    console.print(f"[bold]⚡ F.R.I.D.A.Y[/bold] doctor — v{config.FRIDAY_VERSION}\n")
+    problems: list[str] = []
+
+    console.print(f"[cyan]python[/cyan]      {sys.version.split()[0]} ({sys.executable})")
+
+    console.print(f"[cyan]project[/cyan]     {config.BASE_DIR}")
+    console.print(f"[cyan].env[/cyan]        {'found' if (config.BASE_DIR / '.env').exists() else 'MISSING — copy .env.example'}")
+    if not (config.BASE_DIR / ".env").exists():
+        problems.append("no .env — run: cp .env.example .env")
+
+    # --- provider chain -------------------------------------------------
+    status = LLMEngine().get_model_status()
+    chain = status.get("chain") or []
+    console.print(f"[cyan]model[/cyan]       {status.get('active_model')}")
+    console.print(f"[cyan]fallbacks[/cyan]   {max(0, len(chain) - 1)} {chain[1:] if len(chain) > 1 else ''}")
+    if not chain:
+        problems.append(
+            "no usable model provider — set an API key in .env, or use local Ollama "
+            "(FRIDAY_MODEL=ollama/llama3.2, OLLAMA_ENABLED=True)"
+        )
+
+    # --- optional SDKs ---------------------------------------------------
+    missing = status.get("sdk_skipped") or []
+    if missing:
+        problems.append(f"SDK missing for: {', '.join(missing)} — pip install -r requirements.txt")
+
+    # --- local Ollama, only when it is part of the chain ------------------
+    if any(p == "ollama" for _, p in LLMEngine()._chain):
+        base = config.OLLAMA_BASE_URL.strip().rstrip("/")
+        if not base.endswith("/v1"):
+            base += "/v1"
+        # A real HTTP request, not a bare TCP connect: a socket can open while
+        # TLS or the server itself is broken. Any HTTP answer means it is up.
+        reachable, detail = False, ""
+        try:
+            import requests
+
+            resp = requests.get(f"{base}/models", timeout=5)
+            reachable, detail = resp.status_code < 500, f"HTTP {resp.status_code}"
+        except Exception as e:  # noqa: BLE001 — doctor reports, never raises
+            detail = type(e).__name__
+        console.print(
+            f"[cyan]ollama[/cyan]      {base} "
+            f"{'reachable' if reachable else 'NOT reachable'} ({detail})"
+        )
+        console.print(f"[cyan]ollama bin[/cyan]  {shutil.which('ollama') or 'not installed'}")
+        if not reachable:
+            problems.append(
+                f"Ollama is not answering at {base} — start it with `ollama serve` "
+                "in another terminal (a Codespace restart stops it), or fix OLLAMA_BASE_URL"
+            )
+
+    # --- tools -----------------------------------------------------------
+    discovery = ToolRegistry().auto_discover()
+    console.print(f"[cyan]tools[/cyan]       {discovery['loaded']} loaded, {len(discovery['errors'])} errors")
+    if discovery["errors"]:
+        problems.append(f"tool import errors: {discovery['errors'][:3]}")
+
+    console.print()
+    if problems:
+        console.print(f"[bold red]{len(problems)} problem(s):[/bold red]")
+        for p in problems:
+            console.print(f"  [red]•[/red] {p}")
+        return 1
+    console.print("[bold green]all good — run `python friday.py`[/bold green]")
+    return 0
+
+
 def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="FRIDAY AI")
@@ -92,7 +171,15 @@ def main() -> None:
                              '(used by the "FRIDAY Maintenance" scheduled task)')
     parser.add_argument('--deep', action='store_true',
                         help='with --maintain: deeper cleanup (component store, all temp files)')
+    parser.add_argument('--doctor', action='store_true',
+                        help='check the install, provider chain and local Ollama, then exit')
+    parser.add_argument('--version', action='store_true', help='print the version and exit')
     args = parser.parse_args()
+    if args.version:
+        print(f"FRIDAY AI v{config.FRIDAY_VERSION}")
+        return
+    if args.doctor:
+        raise SystemExit(_doctor())
     if args.maintain:
         from tools import maintenance_tools
         print(maintenance_tools.check_system_performance())

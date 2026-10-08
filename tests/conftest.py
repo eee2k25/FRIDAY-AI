@@ -33,3 +33,23 @@ def registry():
     from core.tool_registry import ToolRegistry
 
     return ToolRegistry()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch):
+    """Fail loudly on any real HTTP request made by a test.
+
+    The suite is offline by design (see README). Ollama is in the default
+    fallback chain, so an engine built with default config would otherwise
+    call the real endpoint from CI. Tests that need a response patch
+    `requests` themselves; anything else gets a ConnectionError, which the
+    engine treats as an unreachable provider.
+    """
+    import requests
+
+    def _blocked(self, request, *args, **kwargs):
+        raise requests.exceptions.ConnectionError(
+            f"network access is disabled in tests: {request.method} {request.url}"
+        )
+
+    monkeypatch.setattr(requests.Session, "send", _blocked)

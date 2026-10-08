@@ -18,7 +18,6 @@ from core.llm_engine import LLMEngine, LLMError
         ("groq/llama-3.3-70b-versatile", "groq"),
         ("openrouter/meta-llama/llama-3.3-70b-instruct", "openrouter"),
         ("together/meta-llama/Llama-3.3-70B-Instruct-Turbo", "together"),
-        ("ollama/llama3.2", "ollama"),
         ("GROQ/Llama3", "groq"),
     ],
 )
@@ -38,16 +37,6 @@ def test_openrouter_model_joins_the_chain_when_keyed(monkeypatch):
     assert status["provider"] == "openrouter"
 
 
-def test_ollama_model_joins_chain_without_api_key(monkeypatch):
-    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
-    monkeypatch.setattr(config, "GROQ_API_KEY", None)
-    monkeypatch.setattr(config, "OPENROUTER_API_KEY", None)
-    monkeypatch.setattr(config, "TOGETHER_API_KEY", None)
-    monkeypatch.setattr(config, "OPENAI_API_KEY", None)
-    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
-    status = LLMEngine().get_model_status()
 def test_ollama_joins_the_chain_without_any_external_api_key(monkeypatch):
     for name in (
         "GEMINI_API_KEY",
@@ -65,6 +54,35 @@ def test_ollama_joins_the_chain_without_any_external_api_key(monkeypatch):
 
     assert status["chain"] == ["ollama/llama3.2"]
     assert status["provider"] == "ollama"
+
+
+def test_ollama_disabled_stays_out_of_the_chain(monkeypatch):
+    """OLLAMA_ENABLED is Ollama's only gate — off means it must not be offered."""
+    for name in (
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+        "TOGETHER_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.setattr(config, name, None)
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", False)
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+
+    status = LLMEngine().get_model_status()
+
+    assert status["chain"] == []
+
+
+def test_ollama_never_fabricates_a_credential(monkeypatch):
+    """A keyless local provider must not invent a key that leaks into headers."""
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
+    assert LLMEngine._key_for("ollama") is None
+    assert LLMEngine._requires_api_key("ollama") is False
+    assert LLMEngine._provider_is_ready("ollama") is True
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", False)
+    assert LLMEngine._provider_is_ready("ollama") is False
 
 
 def test_ollama_shorthand_uses_the_configured_model(monkeypatch):
@@ -106,6 +124,10 @@ def or_engine(monkeypatch):
 @pytest.fixture()
 def ollama_engine(monkeypatch):
     monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
+    monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(config, "GROQ_API_KEY", None)
     monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
     monkeypatch.setattr(config, "FALLBACK_MODELS", [])
     return LLMEngine("SYS")
@@ -121,17 +143,6 @@ def _patch_post(monkeypatch, response, captured=None):
         return response
 
     monkeypatch.setattr(requests, "post", fake_post)
-
-
-@pytest.fixture()
-def ollama_engine(monkeypatch):
-    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
-    monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
-    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
-    monkeypatch.setattr(config, "GROQ_API_KEY", None)
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
-    return LLMEngine("SYS")
 
 
 def test_ollama_compatible_stream_preserves_streaming_and_tool_calls(
@@ -251,7 +262,9 @@ def test_ollama_routes_model_without_auth_header(ollama_engine, monkeypatch):
     captured = {}
     _patch_post(monkeypatch, FakeResponse(["data: [DONE]"]), captured)
     list(ollama_engine._openai_compatible_stream([], [], "ollama/llama3.2", "ollama"))
-    assert captured["url"] == LLMEngine.OPENAI_COMPATIBLE_ENDPOINTS["ollama"]
+    # Resolved at call time from the configured base URL, not from the
+    # import-time OPENAI_COMPATIBLE_ENDPOINTS snapshot.
+    assert captured["url"] == LLMEngine._endpoint_for("ollama")
     assert captured["json"]["model"] == "llama3.2"
     assert "Authorization" not in captured["headers"]
 
