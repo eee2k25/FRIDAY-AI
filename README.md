@@ -285,6 +285,17 @@ skipped; Ollama is keyless and can be enabled/disabled with `OLLAMA_ENABLED`.
 when it is explicitly empty. External providers remain available as optional
 fallbacks, but the local-only configuration below does not activate them.
 
+To opt into cloud fallbacks, configure the credentials for the providers you
+want and list their models in `FRIDAY_FALLBACK_MODELS`, for example:
+
+```env
+FRIDAY_FALLBACK_MODELS=gemini-2.5-flash,groq/llama-3.3-70b-versatile
+```
+
+You can also add `openrouter/...`, `together/...`, or `openai/...` models using
+the provider prefixes above. Leaving this setting empty preserves the
+local-only chain.
+
 ### Local-only setup with Ollama
 
 1. Install [Ollama](https://ollama.com/download) on the machine/container that
@@ -325,6 +336,8 @@ fallbacks, but the local-only configuration below does not activate them.
    The matching OpenAI-compatible chat endpoint is
    `http://127.0.0.1:11434/v1/chat/completions`. `OLLAMA_MODEL` is the default
    model shorthand; the model after `ollama/` is what FRIDAY sends to Ollama.
+   Ollama streams text and tool calls through this endpoint, so the normal
+   FRIDAY tools remain available.
 6. Start FRIDAY with `python friday.py`. The startup banner should show
    `Model: ollama/llama3.2` and `Fallbacks: 0`.
 
