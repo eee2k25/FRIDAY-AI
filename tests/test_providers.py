@@ -18,7 +18,6 @@ from core.llm_engine import LLMEngine, LLMError
         ("groq/llama-3.3-70b-versatile", "groq"),
         ("openrouter/meta-llama/llama-3.3-70b-instruct", "openrouter"),
         ("together/meta-llama/Llama-3.3-70B-Instruct-Turbo", "together"),
-        ("ollama/llama3.2", "ollama"),
         ("GROQ/Llama3", "groq"),
     ],
 )

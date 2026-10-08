@@ -47,6 +47,22 @@ def _get_csv(name: str, default: str) -> list[str]:
     return [item.strip() for item in val.split(",") if item.strip()]
 
 
+def _get_csv_first(*names_and_default: str) -> list[str]:
+    """Read the first comma-separated setting that is present at all.
+
+    The first *set* variable wins, even when it is set to the empty string —
+    so `FRIDAY_FALLBACK_MODELS=` explicitly disables the fallback chain rather
+    than falling through to the next name. Only an entirely absent (unset)
+    variable falls through.
+    """
+    *names, default = names_and_default
+    for name in names:
+        val = os.getenv(name)
+        if val is not None:
+            return [item.strip() for item in val.split(",") if item.strip()]
+    return [item.strip() for item in default.split(",") if item.strip()]
+
+
 # ------------------------------------------------------------- models ---
 # Defaults track currently-served model names. The old gemini-2.0-flash-exp /
 # gemini-1.5-flash defaults were delisted by Google and made a fresh clone fail
@@ -58,8 +74,16 @@ def _get_csv(name: str, default: str) -> list[str]:
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
 #   ollama/       → Ollama (local/remote) e.g. ollama/llama3.2
-PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-2.5-flash")
-FALLBACK_MODELS = _get_csv(
+#   deepseek/     → DeepSeek             e.g. deepseek/deepseek-chat
+#   openai/       → any OpenAI-compatible host (see OPENAI_BASE_URL)
+#
+# FRIDAY_MODEL is provider-neutral and overrides the legacy GEMINI_MODEL name;
+# GEMINI_MODEL is still honoured so existing .env files keep working.
+PRIMARY_MODEL = _get("FRIDAY_MODEL") or _get("GEMINI_MODEL", "gemini-2.5-flash")
+# FRIDAY_FALLBACK_MODELS likewise overrides GEMINI_FALLBACK_MODELS. Setting it
+# to the empty string yields no fallback providers at all.
+FALLBACK_MODELS = _get_csv_first(
+    "FRIDAY_FALLBACK_MODELS",
     "GEMINI_FALLBACK_MODELS",
     "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile",
 )
@@ -69,6 +93,7 @@ GROQ_API_KEY = _get("GROQ_API_KEY")
 OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY")
 TOGETHER_API_KEY = _get("TOGETHER_API_KEY")
 OPENAI_API_KEY = _get("OPENAI_API_KEY")
+DEEPSEEK_API_KEY = _get("DEEPSEEK_API_KEY")
 # Any OpenAI-compatible endpoint can be used with OPENAI_BASE_URL.
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
@@ -78,7 +103,16 @@ HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---
 USER_NAME = _get("FRIDAY_USER_NAME", "Boss")
-FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.5.0")
+# The release version lives in version.py so the banner, the daemon's /status
+# payload and the package metadata cannot drift apart. FRIDAY_VERSION in .env
+# still wins, for anyone who needs to override it.
+try:
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    from version import VERSION as _VERSION
+except ImportError:  # pragma: no cover - only if version.py is missing
+    _VERSION = "0.0.0"
+FRIDAY_VERSION = _get("FRIDAY_VERSION", _VERSION)
 DEBUG_MODE = _get("DEBUG_MODE", "False").strip().lower() in ("1", "true", "yes")
 LOG_LEVEL = _get("LOG_LEVEL", "INFO").strip().upper()
 

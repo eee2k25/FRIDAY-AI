@@ -67,6 +67,7 @@ class LLMEngine:
             ("openrouter/", "openrouter"),
             ("together/", "together"),
             ("openai/", "openai"),
+            ("deepseek/", "deepseek"),
         ):
             if low.startswith(prefix):
                 return provider
@@ -86,6 +87,7 @@ class LLMEngine:
             "openrouter": config.OPENROUTER_API_KEY,
             "together": config.TOGETHER_API_KEY,
             "openai": config.OPENAI_API_KEY,
+            "deepseek": config.DEEPSEEK_API_KEY,
         }.get(provider)
 
     @staticmethod
@@ -424,6 +426,7 @@ class LLMEngine:
     OPENAI_COMPATIBLE_ENDPOINTS = {
         "openrouter": "https://openrouter.ai/api/v1/chat/completions",
         "together": "https://api.together.xyz/v1/chat/completions",
+        "deepseek": "https://api.deepseek.com/v1/chat/completions",
         "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
         "ollama": f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions",
     }
@@ -496,10 +499,32 @@ class LLMEngine:
             raise
         if resp.status_code >= 400:
             if provider == "ollama":
+                if resp.status_code == 404:
+                    raise LLMError(
+                        f"Ollama does not have the model `{model_id}` (HTTP 404) at "
+                        f"{config.OLLAMA_BASE_URL}. List what is installed with `ollama list`, "
+                        f"then fetch it with `ollama pull {model_id}`."
+                    )
+                if resp.status_code == 413:
+                    # The request itself is too big — retrying it unchanged can
+                    # never succeed, so say so explicitly (this is an oversized
+                    # request, NOT a rate limit) and let the agent loop shrink it.
+                    raise LLMError(
+                        f"Ollama rejected the request as too large (HTTP 413 payload too "
+                        f"large) at {config.OLLAMA_BASE_URL}. The prompt exceeds the "
+                        f"`{model_id}` context length — trim the conversation or switch to a "
+                        "model with a larger context window."
+                    )
                 raise LLMError(
                     f"Ollama request failed (HTTP {resp.status_code}) at {config.OLLAMA_BASE_URL}. "
                     "Check that `ollama serve` is running, the URL is correct, and the model is "
-                    f"available (`ollama pull {model_id}`). Response: {resp.text[:300]}"
+                    f"available (`ollama list`, then `ollama pull {model_id}`). "
+                    f"Response: {resp.text[:300]}"
+                )
+            if resp.status_code == 413:
+                raise LLMError(
+                    f"{provider} rejected the request as too large (HTTP 413 payload too "
+                    f"large): {resp.text[:300]}"
                 )
             raise LLMError(f"{provider} HTTP {resp.status_code}: {resp.text[:300]}")
 

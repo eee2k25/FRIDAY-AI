@@ -1,110 +1,126 @@
-# FRIDAY - Codespaces Guide (v1.0.4)
+# FRIDAY — Codespaces Guide (v1.8)
 
-## Option A: Upload via Browser (NO git needed - easiest)
-1. Go to github.com -> New repository -> Name: `MARVEL-FRIDAY` -> Private -> Create repository
-2. On the empty repo page -> `Add file` -> `Upload files`
-3. Drag & Drop ALL files from `FRIDAY-v1.0.4.zip` (extract on your phone/pc first, or upload zip and we extract in Codespace)
-   - Or simpler: upload the zip itself, we'll extract in terminal
-4. Commit directly to main
-
-## Option B: Push via Git (if you have laptop for 2 mins)
-```powershell
-cd C:\MARVEL\FRIDAY
-git init
-git add .
-git commit -m "FRIDAY v1.0.4"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/MARVEL-FRIDAY.git
-git push -u origin main
-```
+A Codespace is a remote Linux machine. Everything below happens in its
+terminal, and `127.0.0.1` means *that* machine — not your laptop.
 
 ---
 
-## Start Codespace (30 seconds)
-1. On your repo page: Press `,` (comma) or click green `<> Code` -> `Codespaces` -> `Create codespace on main`
-2. Wait 60-90s - it auto runs `pip install -r requirements.txt` (you'll see it in terminal)
-3. When done, terminal at bottom is ready.
+## 1. Start the Codespace
 
-## First Run Setup (do once per Codespace)
+1. On the repo page: green **`<> Code`** → **Codespaces** → **Create codespace on main**
+2. Wait ~60–90s. The devcontainer installs dependencies and the `friday`
+   command automatically.
+
+## 2. First-run setup (once per Codespace)
+
 ```bash
-# 1. Create your .env (copy example)
-cp .env.example .env
-nano .env
-# Paste your GEMINI_API_KEY and GROQ_API_KEY, press Ctrl+O, Enter, Ctrl+X
+cd /workspaces/FRIDAY-AI
 
-# 2. Verify
-python selftest.py
-# Should say: RESULT: 35 passed, 0 failed
+# one-shot installer: venv + deps + .env + global `friday` command
+./setup.sh
 
-# 3. Run FRIDAY
-python friday.py
-# Banner should show v1.0.4
+# sanity-check the install before you trust it
+python friday.py --doctor
 ```
 
-## Daily Use
-- Open github.com on phone/laptop -> Your repo -> `Code` -> `Codespaces` -> click your codespace -> terminal is there, FRIDAY still running
-- To save hours: `...` menu in Codespace -> `Stop codespace` when done. (Free 60h/month, 15GB, stops auto after 30min idle anyway)
+`--doctor` prints your Python version, whether `.env` exists, which model
+provider is active, whether local Ollama answers, and how many tools loaded.
+It exits non-zero and lists every problem it finds.
 
-## Use local Ollama in this Codespace
+## 3. Choose a brain
 
-The Codespace is a remote Linux machine. If FRIDAY runs here, installing Ollama
-only on your Windows/Mac computer will **not** make `127.0.0.1` in the Codespace
-reach that computer. The easiest setup is to run Ollama and FRIDAY in this same
-Codespace. Its Python devcontainer does not install Ollama by default.
+### Option A — local Ollama (no API key, no cost)
 
-1. In the Codespaces terminal, install Ollama using its official Linux installer:
-
-   ```bash
-   curl -fsSL https://ollama.com/install.sh | sh
-   ```
-
-2. Open a terminal and start the server:
-
-   ```bash
-   ollama serve
-   ```
-
-   Leave it running. If it reports that port `11434` is already in use, the
-   installer may already have started the server.
-
-3. Open a second terminal, download the model, and create/edit `.env`:
-
-   ```bash
-   ollama pull llama3.2
-   cp .env.example .env   # only if you do not already have a .env
-   nano .env
-   ```
-
-   Set the following (no Gemini/Groq key is needed):
-
-   ```env
-   OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
-   OLLAMA_MODEL=llama3.2
-   GEMINI_MODEL=ollama/llama3.2
-   GEMINI_FALLBACK_MODELS=
-   ```
-
-4. Run `python friday.py` in that second terminal. The banner should show
-   `Model: ollama/llama3.2` and `Fallbacks: 0`. Try `hi`.
-
-Keep `OLLAMA_BASE_URL` at `127.0.0.1` when both processes are in the same
-Codespace; you do not need to make Ollama's port public. The model download uses
-Codespaces disk, and CPU-only inference may be slower than on a PC with a GPU.
-After stopping/restarting the Codespace, start `ollama serve` again. If you want
-FRIDAY in this Codespace to use Ollama in a different Codespace, use the other
-server's reachable private address instead. Alternatively, run FRIDAY on your
-own computer alongside the Ollama server there.
-
-## Secrets - Better Way (so you don't paste keys every time)
-In GitHub: Repo `Settings` -> `Secrets and variables` -> `Codespaces` -> `New repository secret`
-- Name: `GEMINI_API_KEY` Value: your key
-- Name: `GROQ_API_KEY` Value: your key
-Create file `.env` once using `${GEMINI_API_KEY}` - or just set env in devcontainer.json remoteEnv.
-
-## Download Final Zip Anytime
-In Codespace terminal:
 ```bash
-zip -r FRIDAY-FINAL.zip . -x "venv/*" "__pycache__/*" ".git/*" "memory/*"
+./setup.sh --with-ollama      # installs Ollama + pulls llama3.2 (~2 GB)
 ```
-Then in VS Code left file explorer -> Right click FRIDAY-FINAL.zip -> Download
 
+Or do it by hand:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve                  # leave this terminal running
+# second terminal:
+ollama pull llama3.2
+```
+
+> **`bind: address already in use`** on `ollama serve` is not an error — it
+> means a server is *already* running on port 11434. Confirm with
+> `curl http://127.0.0.1:11434/api/tags` and carry on; you do not need to
+> start a second one.
+
+Then set `.env`:
+
+```env
+OLLAMA_ENABLED=True
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_MODEL=llama3.2
+FRIDAY_MODEL=ollama/llama3.2
+FRIDAY_FALLBACK_MODELS=
+```
+
+An **explicitly empty** `FRIDAY_FALLBACK_MODELS=` turns the fallback chain off.
+Leaving the variable *unset* is different — it falls through to
+`GEMINI_FALLBACK_MODELS`, then to the built-in defaults.
+
+### Option B — cloud API keys
+
+Put keys in `.env` (or in repo **Settings → Secrets and variables → Codespaces**,
+which is better than pasting them into a file):
+
+```env
+FRIDAY_MODEL=gemini-2.5-flash
+GEMINI_API_KEY=...
+FRIDAY_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,ollama/llama3.2
+```
+
+`FRIDAY_MODEL` / `FRIDAY_FALLBACK_MODELS` are provider-neutral and override the
+legacy `GEMINI_MODEL` / `GEMINI_FALLBACK_MODELS` names, which still work.
+
+## 4. Run her
+
+```bash
+friday          # the global command, works from any directory
+python friday.py --doctor    # if something looks wrong
+python selftest.py           # offline test suite, no API key needed
+```
+
+The banner should show `v1.8.0`, your `Model:` and `Fallbacks:` count.
+
+> The command is lowercase **`friday`**. Typing `FRIDAY` gives
+> `command not found`. If lowercase also fails, `./setup.sh` did not run or
+> `~/.local/bin` is not on your PATH — the installer tells you the exact
+> `export PATH=...` line to add.
+
+---
+
+## Everyday notes
+
+- **Stop the Codespace** when done (`…` menu → *Stop codespace*). Free tier:
+  60 h/month, 15 GB, auto-stops after 30 min idle.
+- **After a restart**, `ollama serve` is *not* running. Start it again, or
+  re-run `./setup.sh --ollama-only`. The pulled model survives; the server
+  process does not.
+- **Model downloads use Codespace disk.** CPU-only inference is slower than a
+  GPU machine — `llama3.2` (3.2B, Q4_K_M) is the practical choice here.
+- **Ollama on your laptop is unreachable** from a Codespace. Run both in the
+  same Codespace, or point `OLLAMA_BASE_URL` at a network-reachable host.
+
+## Useful commands
+
+```bash
+python friday.py --version     # FRIDAY AI v1.8.0
+python friday.py --doctor      # full environment report
+python friday.py --serve       # HTTP daemon on 127.0.0.1:8765
+pytest -q                      # 335+ tests, all offline
+ollama list                    # which local models are installed
+curl http://127.0.0.1:11434/api/tags   # is the Ollama server up?
+```
+
+## Export your work
+
+```bash
+zip -r FRIDAY-FINAL.zip . -x ".venv/*" "__pycache__/*" ".git/*" "memory/*" ".env"
+```
+
+Then right-click the zip in the VS Code file explorer → **Download**.
