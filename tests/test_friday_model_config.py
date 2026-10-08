@@ -18,7 +18,7 @@ import pytest
 import config
 from core.llm_engine import LLMEngine, LLMError
 
-DEFAULT_FALLBACKS = ["gemini-2.5-flash-lite", "groq/llama-3.3-70b-versatile"]
+DEFAULT_FALLBACKS = ["gemini-2.5-flash-lite", "groq/llama-3.3-70b-versatile", "ollama"]
 
 
 @pytest.fixture(autouse=True)
@@ -342,3 +342,29 @@ def test_ollama_streams_text_and_tool_calls(ollama, monkeypatch):
         ("text", "Boss"),
         ("function_call", {"name": "read_file", "args": {"p": "a.txt"}}),
     ]
+
+
+# ------------------------------------------------------- Ollama endpoint ---
+TEAM_OLLAMA_URL = "https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1"
+
+
+def test_ollama_defaults_to_the_team_endpoint(clean_env, monkeypatch):
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    importlib.reload(config)
+    assert config.OLLAMA_BASE_URL == TEAM_OLLAMA_URL
+
+
+def test_ollama_base_url_can_be_overridden(clean_env, monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+    importlib.reload(config)
+    assert config.OLLAMA_BASE_URL == "http://127.0.0.1:11434/v1"
+
+
+def test_default_chain_ends_with_keyless_ollama(clean_env, monkeypatch):
+    """Ollama is the last-resort fallback: cloud models stay first."""
+    monkeypatch.setenv("GEMINI_API_KEY", "gem")
+    monkeypatch.setenv("GROQ_API_KEY", "groq")
+    importlib.reload(config)
+    chain = LLMEngine().get_model_status()["chain"]
+    assert chain[-1] == f"ollama/{config.OLLAMA_MODEL}"
+    assert chain[0] == "gemini-2.5-flash"

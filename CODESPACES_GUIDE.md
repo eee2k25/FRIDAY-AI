@@ -63,6 +63,11 @@ An **explicitly empty** `FRIDAY_FALLBACK_MODELS=` turns the fallback chain off.
 Leaving the variable *unset* is different — it falls through to
 `GEMINI_FALLBACK_MODELS`, then to the built-in defaults.
 
+> **v1.8 default:** if `OLLAMA_BASE_URL` is not set, FRIDAY uses the team Ollama
+> endpoint (`https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1`)
+> and tries it last in the fallback chain. The `127.0.0.1` value above is only for
+> an Ollama server running **inside this Codespace**; keep it when you run it here.
+
 ### Option B — cloud API keys
 
 Put keys in `.env` (or in repo **Settings → Secrets and variables → Codespaces**,

@@ -85,7 +85,7 @@ PRIMARY_MODEL = _get("FRIDAY_MODEL") or _get("GEMINI_MODEL", "gemini-2.5-flash")
 FALLBACK_MODELS = _get_csv_first(
     "FRIDAY_FALLBACK_MODELS",
     "GEMINI_FALLBACK_MODELS",
-    "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile",
+    "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile,ollama",
 )
 
 GEMINI_API_KEY = _get("GEMINI_API_KEY")
@@ -96,7 +96,9 @@ OPENAI_API_KEY = _get("OPENAI_API_KEY")
 DEEPSEEK_API_KEY = _get("DEEPSEEK_API_KEY")
 # Any OpenAI-compatible endpoint can be used with OPENAI_BASE_URL.
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+# Ollama is keyless. Default: the team Ollama endpoint (OpenAI-compatible /v1).
+# Point OLLAMA_BASE_URL at your own host (e.g. http://127.0.0.1:11434/v1) to override.
+OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1")
 OLLAMA_MODEL = _get("OLLAMA_MODEL", "llama3.2")
 OLLAMA_ENABLED = _get("OLLAMA_ENABLED", "True").strip().lower() in ("1", "true", "yes")
 HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")

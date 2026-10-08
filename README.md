@@ -339,16 +339,28 @@ ollama serve
 ollama pull llama3.2
 ```
 
-Set these values in `.env` (remove any cloud fallbacks if you want all requests
-to stay local):
+**v1.8 ships with the team Ollama endpoint as its default**:
+
+```env
+OLLAMA_BASE_URL=https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1
+```
+
+Ollama is keyless and is the **last** model in the default fallback chain
+(`gemini-2.5-flash` → `gemini-2.5-flash-lite` → `groq/llama-3.3-70b-versatile` →
+`ollama`), so cloud models are still tried first. To make it the primary model,
+or to use your own server, set these in `.env` (remove the cloud fallbacks if you
+want every request to stay on Ollama):
 
 ```env
 OLLAMA_ENABLED=True
-OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_BASE_URL=https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1
 OLLAMA_MODEL=llama3.2
 FRIDAY_MODEL=ollama/llama3.2
 FRIDAY_FALLBACK_MODELS=
 ```
+
+Check which models the endpoint serves with
+`curl <OLLAMA_BASE_URL>/models`, then set `OLLAMA_MODEL` to one of them.
 
 `FRIDAY_MODEL` / `FRIDAY_FALLBACK_MODELS` are provider-neutral and override the
 legacy `GEMINI_MODEL` / `GEMINI_FALLBACK_MODELS` names, which still work if you

@@ -88,9 +88,7 @@ def _doctor() -> int:
     a single request that costs tokens.
     """
     import shutil
-    import socket
     import sys
-    import urllib.parse
 
     console = Console()
     console.print(f"[bold]⚡ F.R.I.D.A.Y[/bold] doctor — v{config.FRIDAY_VERSION}\n")
@@ -121,24 +119,28 @@ def _doctor() -> int:
 
     # --- local Ollama, only when it is part of the chain ------------------
     if any(p == "ollama" for _, p in LLMEngine()._chain):
-        base = config.OLLAMA_BASE_URL.rstrip("/")
-        host = urllib.parse.urlparse(base if "//" in base else f"//{base}").hostname or "127.0.0.1"
-        port = urllib.parse.urlparse(base if "//" in base else f"//{base}").port or 11434
-        reachable = False
+        base = config.OLLAMA_BASE_URL.strip().rstrip("/")
+        if not base.endswith("/v1"):
+            base += "/v1"
+        # A real HTTP request, not a bare TCP connect: a socket can open while
+        # TLS or the server itself is broken. Any HTTP answer means it is up.
+        reachable, detail = False, ""
         try:
-            with socket.create_connection((host, port), timeout=2):
-                reachable = True
-        except OSError:
-            reachable = False
+            import requests
+
+            resp = requests.get(f"{base}/models", timeout=5)
+            reachable, detail = resp.status_code < 500, f"HTTP {resp.status_code}"
+        except Exception as e:  # noqa: BLE001 — doctor reports, never raises
+            detail = type(e).__name__
         console.print(
-            f"[cyan]ollama[/cyan]      {host}:{port} "
-            f"{'reachable' if reachable else 'NOT reachable'}"
+            f"[cyan]ollama[/cyan]      {base} "
+            f"{'reachable' if reachable else 'NOT reachable'} ({detail})"
         )
         console.print(f"[cyan]ollama bin[/cyan]  {shutil.which('ollama') or 'not installed'}")
         if not reachable:
             problems.append(
-                f"Ollama is not answering on {host}:{port} — start it with `ollama serve` "
-                "in another terminal (a Codespace restart stops it)"
+                f"Ollama is not answering at {base} — start it with `ollama serve` "
+                "in another terminal (a Codespace restart stops it), or fix OLLAMA_BASE_URL"
             )
 
     # --- tools -----------------------------------------------------------
