@@ -79,6 +79,14 @@ STREAMING = _get("STREAMING", "True").strip().lower() in ("1", "true", "yes")
 MAX_TOOL_RESULT_CHARS = int(_get("MAX_TOOL_RESULT_CHARS", "12000"))
 HISTORY_WINDOW = int(_get("HISTORY_WINDOW", "40"))
 
+# Tool filtering: only declarations relevant to the current turn are sent to
+# the model. The full 108-tool declaration set costs ~8.6k tokens on EVERY
+# call — more than some fallback providers allow per minute (Groq on-demand
+# caps at 8k TPM), which used to 413-kill every fallback model. Core tools
+# (file/web/memory/time) are always included.
+TOOL_FILTER_ENABLED = _get("TOOL_FILTER", "True").strip().lower() in ("1", "true", "yes")
+MAX_TOOLS_PER_CALL = int(_get("MAX_TOOLS_PER_CALL", "40"))  # 0 = send every tool
+
 # Shell guard policy for run_command / run_powershell / run_python_code:
 #   confirm (default) — ask on the terminal before a catastrophic command
 #   block             — refuse it and tell the model to propose something safer

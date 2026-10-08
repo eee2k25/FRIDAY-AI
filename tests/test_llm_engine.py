@@ -114,3 +114,54 @@ def test_openai_translation_pairs_calls_with_responses(keys, monkeypatch):
     tool = next(m for m in out if m["role"] == "tool")
     assert tool["tool_call_id"] == assistant["tool_calls"][0]["id"]
     assert "DATA" in tool["content"]
+
+
+def test_fallback_walks_the_chain_in_order(keys, monkeypatch):
+    """Regression: the walk used to jump (0 → 1 → 3 → 2) because _model_index
+    was mutated mid-walk — fallbacks must be tried in configured order."""
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-a")
+    monkeypatch.setattr(
+        config, "FALLBACK_MODELS", ["gemini-b", "groq/x", "groq/y"]
+    )
+    engine = LLMEngine()
+    tried: list[str] = []
+
+    def fail_gemini(messages, declarations, model_name):
+        tried.append(model_name)
+        raise RuntimeError("dead")
+        yield  # pragma: no cover
+
+    def fail_groq(messages, declarations, model_name):
+        tried.append(model_name)
+        raise RuntimeError("dead")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(engine, "_gemini_stream", fail_gemini)
+    monkeypatch.setattr(engine, "_groq_stream", fail_groq)
+    with pytest.raises(LLMError, match="fallback chain failed"):
+        list(engine.chat([{"role": "user", "content": "hi"}], []))
+    assert tried[:4] == ["gemini-a", "gemini-b", "groq/x", "groq/y"]
+
+
+def test_successful_model_becomes_the_sticky_start(keys, monkeypatch):
+    """After a successful fallback, the next chat() resumes at that model."""
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-a")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", ["groq/x"])
+    engine = LLMEngine()
+    tried: list[str] = []
+
+    def fail_gemini(messages, declarations, model_name):
+        tried.append(model_name)
+        raise RuntimeError("dead")
+        yield  # pragma: no cover
+
+    def live_groq(messages, declarations, model_name):
+        tried.append(model_name)
+        yield ("text", "ok")
+
+    monkeypatch.setattr(engine, "_gemini_stream", fail_gemini)
+    monkeypatch.setattr(engine, "_groq_stream", live_groq)
+    assert list(engine.chat([{"role": "user", "content": "hi"}], [])) == [("text", "ok")]
+    assert list(engine.chat([{"role": "user", "content": "again"}], [])) == [("text", "ok")]
+    # second call resumes at groq/x — gemini-a is not retried first
+    assert tried == ["gemini-a", "groq/x", "groq/x"]
