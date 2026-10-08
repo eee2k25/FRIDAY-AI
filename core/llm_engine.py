@@ -34,6 +34,9 @@ class LLMEngine:
         self._groq_client = None
         self._gemini_client = None
         if not self._chain:
+            config.logger.error(
+                "No usable model providers in .env — configure an API key (Gemini/Groq/etc.) or enable Ollama"
+            )
             if self._sdk_skipped:
                 config.logger.error(
                     "Provider SDK(s) missing for: %s — run: pip install -r requirements.txt",
@@ -68,6 +71,7 @@ class LLMEngine:
             ("openrouter/", "openrouter"),
             ("together/", "together"),
             ("openai/", "openai"),
+            ("ollama/", "ollama"),
         ):
             if low.startswith(prefix):
                 return provider
@@ -81,6 +85,7 @@ class LLMEngine:
             "openrouter": config.OPENROUTER_API_KEY,
             "together": config.TOGETHER_API_KEY,
             "openai": config.OPENAI_API_KEY,
+            "ollama": "enabled" if config.OLLAMA_ENABLED else None,
         }.get(provider)
 
     @staticmethod
@@ -108,6 +113,7 @@ class LLMEngine:
         return True
 
     def _build_chain(self) -> list[tuple[str, str]]:
+        """Ordered (model, provider) pairs, skipping unavailable providers."""
         """Ordered (model, provider) pairs, skipping missing credentials/SDKs.
 
         Ollama is local and keyless; all other providers require their API key.
@@ -122,6 +128,10 @@ class LLMEngine:
                 continue
             seen.add(m)
             provider = self._provider_for(m)
+            if self._key_for(provider):
+                chain.append((m, provider))
+            else:
+                config.logger.debug("skipping %s — provider %s is not configured/enabled", m, provider)
             if self._requires_api_key(provider) and not self._key_for(provider):
                 config.logger.debug("skipping %s — no API key for provider %s", m, provider)
                 continue
@@ -159,6 +169,9 @@ class LLMEngine:
         {"function_response": {name, response}}.
         """
         if not self._chain:
+            raise LLMError(
+                "No model providers configured. Add provider API key(s) or set GEMINI_MODEL=ollama/<model> with OLLAMA_ENABLED=True."
+            )
             msg = "No usable models: configure a provider API key or select a local Ollama model."
             if self._sdk_skipped:
                 msg += (
@@ -440,6 +453,21 @@ class LLMEngine:
     ):
         """Stream from an OpenAI-compatible chat-completions endpoint.
 
+        Used for OpenRouter, Together, OpenAI-style hosts and Ollama. Talks raw
+        SSE over `requests` so FRIDAY gains fallback providers with zero new
+        dependencies.
+        """
+        import requests
+
+        url = self.OPENAI_COMPATIBLE_ENDPOINTS[provider]
+        if provider == "openai":
+            url = f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
+        elif provider == "ollama":
+            url = f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions"
+        model_id = model_name.split("/", 1)[1]
+        headers = {"Content-Type": "application/json"}
+        if provider != "ollama":
+            headers["Authorization"] = "Bearer " + (self._key_for(provider) or "")
         OpenRouter, Together and OpenAI use this adapter alongside local
         Ollama. Raw SSE over `requests` keeps the adapter dependency-free.
         """
@@ -464,8 +492,24 @@ class LLMEngine:
         if declarations:
             payload["tools"] = [{"type": "function", "function": d} for d in declarations]
 
-        resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        try:
+            resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        except requests.exceptions.RequestException as e:
+            if provider == "ollama":
+                raise LLMError(
+                    "Cannot reach Ollama at "
+                    f"{config.OLLAMA_BASE_URL}. Ensure `ollama serve` is running, the URL is "
+                    "reachable from this FRIDAY process, and the model is pulled "
+                    f"(e.g. `ollama pull {model_id}`)."
+                ) from e
+            raise
         if resp.status_code >= 400:
+            if provider == "ollama":
+                raise LLMError(
+                    f"Ollama request failed (HTTP {resp.status_code}) at {config.OLLAMA_BASE_URL}. "
+                    "Check that `ollama serve` is running, the URL is correct, and the model is "
+                    f"available (`ollama pull {model_id}`). Response: {resp.text[:300]}"
+                )
             raise LLMError(f"{provider} HTTP {resp.status_code}: {resp.text[:300]}")
 
         pending: dict[int, dict] = {}
