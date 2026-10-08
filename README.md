@@ -19,7 +19,7 @@ exists — file written, report created — not until she gets stuck.
 | Layer      | Implementation                                              |
 |------------|-------------------------------------------------------------|
 | Primary LLM| Gemini 2.5 Flash (`google-genai` SDK — the official successor, streaming) |
-| Fallbacks  | Gemini 1.5 Flash → Groq `llama-3.3-70b-versatile` (auto-switch on API errors) |
+| Fallbacks  | Gemini, Groq, OpenRouter, Together, OpenAI, or local Ollama (auto-switch on API errors) |
 | Agent loop | ReAct with native function calling, max 15 iterations       |
 | Memory     | SQLite (`memory/friday_memory.db`) — conversations, facts, tasks, tool usage |
 | Console    | Rich — streaming output, tool-call styling, Markdown reports |
@@ -122,6 +122,9 @@ Or just double-click **`friday.bat`**.
 - **`GROQ_API_KEY`** — recommended (fallback if Gemini rate-limits)
 - **No API key is required for Ollama** (`ollama/<model>`), but the Ollama service must be reachable
 - The rest (`OPENROUTER`, `TOGETHER`, `HUGGINGFACE`) are reserved for future modules (JARVIS / EDITH)
+### Provider credentials
+- Cloud providers need their own key only when you select them (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `TOGETHER_API_KEY`, or `OPENAI_API_KEY`).
+- **Ollama needs no external API key**. Run an Ollama server and select a local model as described below.
 
 ---
 
@@ -235,7 +238,7 @@ C:\MARVEL\FRIDAY\
 ├── selftest.py            ← offline smoke test (no API keys needed)
 ├── core\
 │   ├── __init__.py
-│   ├── llm_engine.py      ← Gemini / Groq / OpenRouter / Together adapters + fallback chain
+│   ├── llm_engine.py      ← Gemini / Groq / OpenRouter / Together / OpenAI / Ollama adapters
 │   ├── streaming.py       ← streaming display handler (live tail, final render, tool styles)
 │   ├── agent_loop.py      ← ReAct loop (THE BRAIN)
 │   ├── memory.py          ← SQLite memory (conversations/facts/tasks/tool usage)
@@ -264,7 +267,7 @@ C:\MARVEL\FRIDAY\
 
 ```bash
 pip install -e ".[dev]"
-pytest              # 102 tests, no API keys and no network needed
+pytest              # 302 tests, no API keys and no network needed
 ruff check .        # lint
 ```
 
@@ -278,14 +281,20 @@ CI runs both on every push across Python 3.10 / 3.11 / 3.12
 Any model in the chain may carry a provider prefix. Models whose API key is
 missing are silently skipped, so you can list more than you have keys for.
 `ollama/` models are keyless and use your configured Ollama endpoint.
+Any model in the chain may carry a provider prefix; cloud models whose API key
+is missing are silently skipped. Local Ollama models do not need a key.
 
 | Prefix | Provider | Example |
 |---|---|---|
 | *(none)* | Google Gemini | `gemini-2.5-flash` |
+| `ollama/` | Local Ollama | `ollama/llama3.2` |
 | `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
 | `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
 | `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | `ollama/` | Ollama (OpenAI-compatible local/remote endpoint) | `ollama/llama3.2` |
+| `openai/` | OpenAI-compatible endpoint | `openai/gpt-4.1-mini` |
+
+Cloud-provider example:
 
 ```env
 GEMINI_MODEL=gemini-2.5-flash
@@ -293,6 +302,21 @@ GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-
 ```
 
 ### Ollama setup (local or remote)
+### Run FRIDAY with local Ollama
+
+Install and start [Ollama](https://ollama.com/download), then pull a model. On
+Windows PowerShell, open one terminal for the server and another for FRIDAY:
+
+```powershell
+ollama serve
+```
+
+```powershell
+ollama pull llama3.2
+```
+
+Set these values in `.env` (remove any cloud fallbacks if you want all requests
+to stay local):
 
 ```env
 OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
@@ -317,6 +341,10 @@ Important deployment caveat: if Ollama runs in a different Codespace/container
 from FRIDAY, `127.0.0.1` points to FRIDAY's own environment. Use a network-
 reachable host/port (forwarded URL, shared container network, or run both in
 the same environment).
+Start FRIDAY with `python friday.py`. You should see `Model: ollama/llama3.2`
+and `Fallbacks: 0`. The short form `GEMINI_MODEL=ollama` uses `OLLAMA_MODEL`.
+Ollama's OpenAI-compatible endpoint streams text and tool calls, so FRIDAY's
+normal tools remain available.
 
 ---
 
@@ -461,7 +489,8 @@ loop end-to-end using a mock LLM.
 
 | Symptom | Fix |
 |---|---|
-| `No API keys found` banner | Fill `GEMINI_API_KEY` in `.env`, restart |
+| `No usable model configured` banner | Add the selected cloud provider's key, or set `GEMINI_MODEL=ollama/llama3.2` and start Ollama |
+| Ollama connection refused | Start `ollama serve` in the same environment as FRIDAY; verify `OLLAMA_BASE_URL` points to its `/v1` endpoint |
 | `404 model not found` from Gemini | Set `GEMINI_MODEL=gemini-2.5-flash` in `.env` (delisted model name) |
 | Gemini rate limits | Fallback chain auto-switches; add `GROQ_API_KEY` for resilience |
 | Ollama provider fails / unreachable | Verify `ollama serve` is running, `OLLAMA_BASE_URL` is reachable from FRIDAY, and pull the model with `ollama pull <model>` |

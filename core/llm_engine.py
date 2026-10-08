@@ -1,9 +1,10 @@
-"""LLM engine — Gemini primary with automatic fallback chain (Gemini → Groq).
+"""LLM engine — provider-routed streaming with an automatic fallback chain.
 
 - Gemini via the official `google-genai` SDK (streaming + native function calling)
 - Groq via its OpenAI-compatible API (streaming + tool calls)
+- OpenRouter, Together, OpenAI and local Ollama via OpenAI-compatible APIs
 - Message format translation between internal, google-genai and OpenAI-style
-  (Groq) formats
+  formats
 - Auto model switching on API errors, rate limits and missing keys
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ class LLMStreamError(LLMError):
 class LLMEngine:
     def __init__(self, system_prompt: str = "") -> None:
         self.system_prompt = system_prompt
+        self._sdk_skipped: list[str] = []
         self._chain = self._build_chain()
         self._model_index = 0
         self._stats: dict[str, int] = {}
@@ -35,20 +37,36 @@ class LLMEngine:
             config.logger.error(
                 "No usable model providers in .env — configure an API key (Gemini/Groq/etc.) or enable Ollama"
             )
+            if self._sdk_skipped:
+                config.logger.error(
+                    "Provider SDK(s) missing for: %s — run: pip install -r requirements.txt",
+                    ", ".join(self._sdk_skipped),
+                )
+            else:
+                config.logger.error(
+                    "No usable model providers configured — add a provider API key or "
+                    "select a local model such as ollama/llama3.2"
+                )
 
     # --------------------------------------------------- chain mgmt ---
     @staticmethod
     def _normalize_model(m: str) -> str:
-        """Strip whitespace and Groq UI labels like ' - on_demand' from model names."""
+        """Strip whitespace/UI labels and expand the `ollama` model shorthand."""
         m = m.strip()
         m = re.sub(r"\s*[-–]\s*on[_ ]?demand$", "", m, flags=re.IGNORECASE)
-        return m.strip()
+        m = m.strip()
+        if m.lower() in {"ollama", "ollama/"} and config.OLLAMA_MODEL:
+            return f"ollama/{config.OLLAMA_MODEL.strip()}"
+        return m
 
     @staticmethod
     def _provider_for(model: str) -> str:
         """Map a model name to its provider from the optional prefix."""
         low = model.lower()
+        if low == "ollama":
+            return "ollama"
         for prefix, provider in (
+            ("ollama/", "ollama"),
             ("groq/", "groq"),
             ("openrouter/", "openrouter"),
             ("together/", "together"),
@@ -70,9 +88,38 @@ class LLMEngine:
             "ollama": "enabled" if config.OLLAMA_ENABLED else None,
         }.get(provider)
 
+    @staticmethod
+    def _requires_api_key(provider: str) -> bool:
+        """Ollama is a local service and does not require an API credential."""
+        return provider != "ollama"
+
+    @staticmethod
+    def _sdk_available(provider: str) -> bool:
+        """Can this provider's SDK actually be imported right now?
+
+        A keyed model whose SDK is missing (stale venv, partial install) can
+        never serve a request — checking once here keeps the chain honest and
+        the failure diagnosable instead of a mid-stream ModuleNotFoundError.
+        OpenRouter/Together/OpenAI/Ollama talk raw HTTP via `requests` — always
+        available; Ollama is the local, keyless endpoint.
+        """
+        try:
+            if provider == "gemini":
+                from google import genai  # noqa: F401
+            elif provider == "groq":
+                import groq  # noqa: F401
+        except ImportError:
+            return False
+        return True
+
     def _build_chain(self) -> list[tuple[str, str]]:
         """Ordered (model, provider) pairs, skipping unavailable providers."""
+        """Ordered (model, provider) pairs, skipping missing credentials/SDKs.
+
+        Ollama is local and keyless; all other providers require their API key.
+        """
         chain: list[tuple[str, str]] = []
+        self._sdk_skipped = []
         seen: set[str] = set()
         models = [config.PRIMARY_MODEL] + list(config.FALLBACK_MODELS)
         for m in models:
@@ -85,6 +132,19 @@ class LLMEngine:
                 chain.append((m, provider))
             else:
                 config.logger.debug("skipping %s — provider %s is not configured/enabled", m, provider)
+            if self._requires_api_key(provider) and not self._key_for(provider):
+                config.logger.debug("skipping %s — no API key for provider %s", m, provider)
+                continue
+            if not self._sdk_available(provider):
+                config.logger.warning(
+                    "skipping %s — the %s SDK is not installed "
+                    "(fix: pip install -r requirements.txt)",
+                    m,
+                    provider,
+                )
+                self._sdk_skipped.append(m)
+                continue
+            chain.append((m, provider))
         return chain
 
     def set_primary_model(self, model_name: str) -> None:
@@ -112,10 +172,24 @@ class LLMEngine:
             raise LLMError(
                 "No model providers configured. Add provider API key(s) or set GEMINI_MODEL=ollama/<model> with OLLAMA_ENABLED=True."
             )
+            msg = "No usable models: configure a provider API key or select a local Ollama model."
+            if self._sdk_skipped:
+                msg += (
+                    " SDK missing for: " + ", ".join(self._sdk_skipped)
+                    + " — fix: pip install -r requirements.txt"
+                )
+            else:
+                msg += " For example, set GEMINI_MODEL=ollama/llama3.2 in .env."
+            raise LLMError(msg)
         errors: list[str] = []
         attempts = 0
+        # Walk the chain in configured order from a FIXED origin. _model_index
+        # is the sticky "current model" (updated below so the next chat()
+        # resumes at the model that last worked) — mutating it mid-walk made
+        # the fallback order jump (0 → 1 → 3 → 2 …), skipping models out of turn.
+        start = self._model_index
         while attempts <= len(self._chain):
-            idx = (self._model_index + attempts) % len(self._chain)
+            idx = (start + attempts) % len(self._chain)
             model_name, provider = self._chain[idx]
             self._model_index = idx
             self._stats[model_name] = self._stats.get(model_name, 0) + 1
@@ -145,6 +219,7 @@ class LLMEngine:
             "active_model": active[0],
             "provider": active[1],
             "chain": [m for m, _ in self._chain],
+            "sdk_skipped": list(self._sdk_skipped),
             "calls": dict(self._stats),
             "last_error": self._last_error,
         }
@@ -155,7 +230,10 @@ class LLMEngine:
             try:
                 from google import genai
             except ImportError as e:
-                raise LLMError("google-genai SDK not installed. Run: pip install -r requirements.txt") from e
+                raise LLMError(
+                    "google-genai SDK not installed — every Gemini model is offline. "
+                    "Fix: pip install google-genai   (or re-run setup.ps1)"
+                ) from e
             self._gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
         return self._gemini_client
 
@@ -254,7 +332,15 @@ class LLMEngine:
         return contents
 
     def _gemini_stream(self, messages: list[dict], declarations: list[dict], model_name: str):
-        from google.genai import types
+        try:
+            from google.genai import types
+        except ImportError as e:
+            # Wrapped so a missing SDK surfaces as an actionable LLMError, not
+            # a raw ModuleNotFoundError buried in the fallback-chain report.
+            raise LLMError(
+                "google-genai SDK not installed — every Gemini model is offline. "
+                "Fix: pip install google-genai   (or re-run setup.ps1)"
+            ) from e
 
         client = self._get_gemini_client()
         contents = self._to_genai_contents(messages)
@@ -330,13 +416,25 @@ class LLMEngine:
                             slot["args"] += fn.arguments
         yield from self._emit_tool_calls(pending_calls)
 
-    # ------------------------------- openrouter / together (OpenAI API) ---
+    # -------------------------- OpenAI-compatible providers ---------------
     OPENAI_COMPATIBLE_ENDPOINTS = {
         "openrouter": "https://openrouter.ai/api/v1/chat/completions",
         "together": "https://api.together.xyz/v1/chat/completions",
         "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
         "ollama": f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions",
     }
+
+    @classmethod
+    def _endpoint_for(cls, provider: str) -> str:
+        """Resolve an OpenAI-compatible chat endpoint from a configured base URL."""
+        if provider == "ollama":
+            base_url = config.OLLAMA_BASE_URL.strip().rstrip("/")
+            if base_url.endswith("/chat/completions"):
+                return base_url
+            if not base_url.endswith("/v1"):
+                base_url += "/v1"
+            return f"{base_url}/chat/completions"
+        return cls.OPENAI_COMPATIBLE_ENDPOINTS[provider]
 
     @staticmethod
     def _emit_tool_calls(pending: dict[int, dict]):
@@ -353,7 +451,7 @@ class LLMEngine:
     def _openai_compatible_stream(
         self, messages: list[dict], declarations: list[dict], model_name: str, provider: str
     ):
-        """Stream from any OpenAI-compatible chat-completions endpoint.
+        """Stream from an OpenAI-compatible chat-completions endpoint.
 
         Used for OpenRouter, Together, OpenAI-style hosts and Ollama. Talks raw
         SSE over `requests` so FRIDAY gains fallback providers with zero new
@@ -370,6 +468,19 @@ class LLMEngine:
         headers = {"Content-Type": "application/json"}
         if provider != "ollama":
             headers["Authorization"] = "Bearer " + (self._key_for(provider) or "")
+        OpenRouter, Together and OpenAI use this adapter alongside local
+        Ollama. Raw SSE over `requests` keeps the adapter dependency-free.
+        """
+        import requests
+
+        url = self._endpoint_for(provider)
+        model_id = model_name.split("/", 1)[1] if "/" in model_name else model_name
+        if provider == "ollama" and (model_name.lower() == "ollama" or not model_id):
+            model_id = config.OLLAMA_MODEL
+        headers = {"Content-Type": "application/json"}
+        api_key = self._key_for(provider)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         if provider == "openrouter":
             headers["X-Title"] = "FRIDAY"
         payload = {
@@ -403,6 +514,8 @@ class LLMEngine:
 
         pending: dict[int, dict] = {}
         for raw_line in resp.iter_lines(decode_unicode=True):
+            if isinstance(raw_line, bytes):
+                raw_line = raw_line.decode("utf-8", errors="replace")
             if not raw_line or not raw_line.startswith("data:"):
                 continue
             data = raw_line[5:].strip()

@@ -35,6 +35,18 @@ def _get(name: str, default: str | None = None) -> str | None:
     return val if val not in (None, "") else default
 
 
+def _get_csv(name: str, default: str) -> list[str]:
+    """Read a comma-separated setting, preserving an explicitly empty value.
+
+    Unlike `_get`, an empty string is meaningful here: it lets users turn off
+    the fallback chain with `GEMINI_FALLBACK_MODELS=`.
+    """
+    val = os.getenv(name)
+    if val is None:
+        val = default
+    return [item.strip() for item in val.split(",") if item.strip()]
+
+
 # ------------------------------------------------------------- models ---
 # Defaults track currently-served model names. The old gemini-2.0-flash-exp /
 # gemini-1.5-flash defaults were delisted by Google and made a fresh clone fail
@@ -46,15 +58,14 @@ def _get(name: str, default: str | None = None) -> str | None:
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
 #   ollama/       → Ollama (local/remote) e.g. ollama/llama3.2
+#   ollama/       → local Ollama         e.g. ollama/llama3.2
+OLLAMA_MODEL = _get("OLLAMA_MODEL", "llama3.2")
+OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
 PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-2.5-flash")
-FALLBACK_MODELS = [
-    m.strip()
-    for m in _get(
-        "GEMINI_FALLBACK_MODELS",
-        "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile",
-    ).split(",")
-    if m.strip()
-]
+FALLBACK_MODELS = _get_csv(
+    "GEMINI_FALLBACK_MODELS",
+    "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile",
+)
 
 GEMINI_API_KEY = _get("GEMINI_API_KEY")
 GROQ_API_KEY = _get("GROQ_API_KEY")
@@ -82,6 +93,14 @@ STREAMING = _get("STREAMING", "True").strip().lower() in ("1", "true", "yes")
 # Groq on-demand tier caps at 8k TPM).
 MAX_TOOL_RESULT_CHARS = int(_get("MAX_TOOL_RESULT_CHARS", "12000"))
 HISTORY_WINDOW = int(_get("HISTORY_WINDOW", "40"))
+
+# Tool filtering: only declarations relevant to the current turn are sent to
+# the model. The full 108-tool declaration set costs ~8.6k tokens on EVERY
+# call — more than some fallback providers allow per minute (Groq on-demand
+# caps at 8k TPM), which used to 413-kill every fallback model. Core tools
+# (file/web/memory/time) are always included.
+TOOL_FILTER_ENABLED = _get("TOOL_FILTER", "True").strip().lower() in ("1", "true", "yes")
+MAX_TOOLS_PER_CALL = int(_get("MAX_TOOLS_PER_CALL", "40"))  # 0 = send every tool
 
 # Shell guard policy for run_command / run_powershell / run_python_code:
 #   confirm (default) — ask on the terminal before a catastrophic command

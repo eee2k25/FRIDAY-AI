@@ -103,6 +103,14 @@ def main() -> int:
         bad = registry.execute_tool("does_not_exist", {})
         check("unknown tool handled", bad["success"] is False and "Unknown tool" in bad["error"])
 
+        # tool filtering: relevant subset, core tools always in, cap respected
+        sel = registry.select_declarations("create an excel spreadsheet with a chart", cap=40)
+        sel_names = {d["name"] for d in sel}
+        check("tool filter keeps relevant tools", "create_excel" in sel_names and "add_excel_chart" in sel_names)
+        check("tool filter includes core tools", {"read_file", "write_file", "web_search"} <= sel_names)
+        check("tool filter shrinks the set", 0 < len(sel) < len(names) and len(sel) <= 40)
+        check("tool filter disabled returns all", len(registry.select_declarations("anything", cap=0)) == len(names))
+
         # regression guard: every module-level constant referenced in code must exist
         # (catches the v1.0.3 _COMPILE_CAP incident — a use shipped without its definition)
         import ast as _ast
@@ -302,6 +310,46 @@ def main() -> int:
             err is None
             and any("Recovered" in t for t in tb)
             and sum(len(str(m.get("content", ""))) for m in new_msgs) < 8000,
+        )
+
+        # Groq-style 413: the body says 'rate_limit_exceeded' — it must STILL be
+        # treated as oversized (diet), not as a transient rate limit (sleep+retry)
+        class GroqTPMEngine:
+            def __init__(self) -> None:
+                self.system_prompt = ""
+
+            def set_system_prompt(self, p) -> None:
+                self.system_prompt = p
+
+            def chat(self, messages, declarations):
+                size = sum(len(str(m.get("content", ""))) for m in messages)
+                if size > 8000:
+                    raise RuntimeError(
+                        "APIStatusError: Error code: 413 - {'error': {'message': 'Request too "
+                        "large for model in organization service tier on_demand on tokens per "
+                        "minute (TPM): Limit 8000, Requested 9612', 'type': 'tokens', "
+                        "'code': 'rate_limit_exceeded'}}"
+                    )
+                yield ("text", "Diet worked, Boss.")
+
+            def get_model_status(self) -> dict:
+                return {"active_model": "groqish"}
+
+        agent_gq = AgentLoop(GroqTPMEngine(), registry, mem, console=RichConsole(file=StringIO()))
+        tb2, _c2, err2, new_msgs2, _d2 = agent_gq._recover_or_give_up(
+            big_msgs,
+            [],
+            LLMError(
+                "All models in fallback chain failed:\n"
+                "  - groq/openai/gpt-oss-20b: APIStatusError: Error code: 413 ... "
+                "'code': 'rate_limit_exceeded' ... tokens per minute (TPM)"
+            ),
+        )
+        check(
+            "groq-style 413 takes the diet path",
+            err2 is None
+            and any("Diet worked" in t for t in tb2)
+            and sum(len(str(m.get("content", ""))) for m in new_msgs2) < 8000,
         )
 
         # ---- 5. persona ---------------------------------------------------

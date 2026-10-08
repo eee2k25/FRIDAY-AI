@@ -53,6 +53,33 @@ def _banner(console: Console, tool_count: int, status: dict) -> None:
     console.print(Panel(body, box=box.DOUBLE_EDGE, border_style="cyan", width=70))
 
 
+def _sdk_problems() -> list[str]:
+    """Actionable boot warnings when a provider's Python SDK is missing.
+
+    A stale virtualenv (installed before a requirements change) is the classic
+    cause of 'every model in the chain failed' — surface it at startup with
+    the exact fix instead of letting it detonate mid-conversation.
+    """
+    problems = []
+    if config.GEMINI_API_KEY:
+        try:
+            from google import genai  # noqa: F401
+        except ImportError:
+            problems.append(
+                "google-genai SDK missing — all Gemini models are OFFLINE. "
+                "Fix: .venv\\Scripts\\pip install google-genai   (or re-run setup.ps1)"
+            )
+    if config.GROQ_API_KEY:
+        try:
+            import groq  # noqa: F401
+        except ImportError:
+            problems.append(
+                "groq SDK missing — all Groq models are OFFLINE. "
+                "Fix: .venv\\Scripts\\pip install groq   (or re-run setup.ps1)"
+            )
+    return problems
+
+
 def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="FRIDAY AI")
@@ -108,8 +135,11 @@ def main() -> None:
         )
     if not status["chain"]:
         console.print(
-            "[red]No API keys found. Add GEMINI_API_KEY (and/or GROQ_API_KEY) to .env, then restart.[/red]"
+            "[red]No usable model configured. Add a provider API key, or set "
+            "GEMINI_MODEL=ollama/llama3.2 for local Ollama.[/red]"
         )
+    for problem in _sdk_problems():
+        console.print(f"[yellow]⚠ {problem}[/yellow]")
 
     # 3 — main loop
     session_id = str(uuid.uuid4())
@@ -149,6 +179,11 @@ def main() -> None:
                 f"Calls: {st['calls']}\n"
                 f"Last error: {st['last_error'] or 'none'}"
             )
+            if st.get("sdk_skipped"):
+                console.print(
+                    f"[yellow]SDK missing (models offline): {', '.join(st['sdk_skipped'])} "
+                    f"— fix: pip install -r requirements.txt[/yellow]"
+                )
             continue
         if low == "clear":
             n = memory.clear_session(session_id)
