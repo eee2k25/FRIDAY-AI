@@ -36,22 +36,14 @@ def _get(name: str, default: str | None = None) -> str | None:
 
 
 # ------------------------------------------------------------- models ---
-# Defaults track currently-served model names. The old gemini-2.0-flash-exp /
-# gemini-1.5-flash defaults were delisted by Google and made a fresh clone fail
-# on the very first prompt. Override either value in .env.
-#
-# Model names may be prefixed with a provider:
-#   (no prefix)   → Google Gemini        e.g. gemini-2.5-flash
-#   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
-#   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
-#   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
-PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-2.5-flash")
+# Use the Groq-hosted GPT-OSS 120B model from the older working build as the
+# default brain. The groq/ prefix routes this model to Groq's API. Override in
+# .env with FRIDAY_MODEL (or the legacy GEMINI_MODEL setting).
+# Provider prefixes supported: groq/, openrouter/, together/; no prefix means Gemini.
+PRIMARY_MODEL = _get("FRIDAY_MODEL", _get("GEMINI_MODEL", "groq/openai/gpt-oss-120b"))
 FALLBACK_MODELS = [
     m.strip()
-    for m in _get(
-        "GEMINI_FALLBACK_MODELS",
-        "gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile",
-    ).split(",")
+    for m in _get("FRIDAY_FALLBACK_MODELS", _get("GEMINI_FALLBACK_MODELS", "")).split(",")
     if m.strip()
 ]
 
@@ -66,7 +58,7 @@ HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---
 USER_NAME = _get("FRIDAY_USER_NAME", "Boss")
-FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.5.0")
+FRIDAY_VERSION = _get("FRIDAY_VERSION", "1.7.0")
 DEBUG_MODE = _get("DEBUG_MODE", "False").strip().lower() in ("1", "true", "yes")
 LOG_LEVEL = _get("LOG_LEVEL", "INFO").strip().upper()
 

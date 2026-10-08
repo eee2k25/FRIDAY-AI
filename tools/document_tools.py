@@ -4,7 +4,7 @@ Office support was split into focused modules as it grew:
 
     Word        → tools/word_tools.py        (v1.3.0)
     PowerPoint  → tools/powerpoint_tools.py  (v1.4.0)
-    Excel       → tools/excel_tools.py       (v1.5.0)
+    Excel       → tools/excel_tools.py       (v1.5.0+)
 
 This module re-exports the original function names so older imports such as
 `from tools.document_tools import create_project_report` keep working. It

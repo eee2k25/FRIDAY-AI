@@ -122,14 +122,14 @@ $envFile = Join-Path $FridayDir '.env'
 if (-not (Test-Path $envFile)) {
     Copy-Item (Join-Path $FridayDir '.env.example') $envFile
     Write-Ok '.env created from .env.example'
-    $key = Read-Host '    Paste your GEMINI_API_KEY (Enter to skip, you can add it later in .env)'
+    $key = Read-Host '    Paste your GROQ_API_KEY (Enter to skip, you can add it later in .env)'
     if ($key) {
-        (Get-Content $envFile) -replace '^\s*#?\s*GEMINI_API_KEY\s*=.*$', "GEMINI_API_KEY=$key" |
+        (Get-Content $envFile) -replace '^\s*#?\s*GROQ_API_KEY\s*=.*$', "GROQ_API_KEY=$key" |
             Set-Content $envFile -Encoding UTF8
-        if (-not (Select-String -Path $envFile -Pattern '^GEMINI_API_KEY=' -Quiet)) {
-            Add-Content $envFile "GEMINI_API_KEY=$key"
+        if (-not (Select-String -Path $envFile -Pattern '^GROQ_API_KEY=' -Quiet)) {
+            Add-Content $envFile "GROQ_API_KEY=$key"
         }
-        Write-Ok 'API key saved'
+        Write-Ok 'Groq API key saved'
     }
 } else {
     Write-Ok '.env already exists — keeping your settings'

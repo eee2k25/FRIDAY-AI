@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.5
+# ⚡ F.R.I.D.A.Y. — v1.7
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -18,8 +18,8 @@ exists — file written, report created — not until she gets stuck.
 
 | Layer      | Implementation                                              |
 |------------|-------------------------------------------------------------|
-| Primary LLM| Gemini 2.5 Flash (`google-genai` SDK — the official successor, streaming) |
-| Fallbacks  | Gemini 1.5 Flash → Groq `llama-3.3-70b-versatile` (auto-switch on API errors) |
+| Primary LLM| Groq-hosted `openai/gpt-oss-120b` (streaming + native tool calling) |
+| Fallbacks  | Optional; configure `FRIDAY_FALLBACK_MODELS` in `.env` |
 | Agent loop | ReAct with native function calling, max 15 iterations       |
 | Memory     | SQLite (`memory/friday_memory.db`) — conversations, facts, tasks, tool usage |
 | Console    | Rich — streaming output, tool-call styling, Markdown reports |
@@ -27,16 +27,11 @@ exists — file written, report created — not until she gets stuck.
 | Docs       | python-docx (Word) · openpyxl (Excel) · pdfplumber/PyPDF2 (PDF) |
 | Math       | AST-safe calculator + sympy (equations) + pint (units)      |
 
-> **Model-name note (refinement):** Google has delisted `gemini-2.0-flash-exp`
-> and `gemini-1.5-flash`. The defaults in `config.py` keep the original spec
-> intact, but you almost certainly want to set current names in `.env`:
->
-> ```
-> GEMINI_MODEL=gemini-2.5-flash
-> GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile
-> ```
->
-> Or switch at runtime with the `model <name>` console command.
+> **Default model:** FRIDAY now defaults to Groq's `openai/gpt-oss-120b`, matching
+> the model used by the working desktop build. Put `GROQ_API_KEY` in `.env`.
+> The model can be overridden with `FRIDAY_MODEL`; optional backups go in
+> `FRIDAY_FALLBACK_MODELS`. The older `GEMINI_MODEL` and
+> `GEMINI_FALLBACK_MODELS` variables remain supported for existing setups.
 
 ---
 
@@ -106,8 +101,8 @@ New-Item -ItemType Directory -Force -Path "core","tools","memory","logs"
 Copy-Item .env.example .env
 notepad .env
 # (or, if you already have .env — add any missing keys, then:)
-#   GEMINI_MODEL=gemini-2.5-flash
-#   GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile
+#   FRIDAY_MODEL=groq/openai/gpt-oss-120b
+#   FRIDAY_FALLBACK_MODELS=groq/llama-3.3-70b-versatile
 
 # Step 7 — run
 python friday.py
@@ -118,8 +113,8 @@ Or just double-click **`friday.bat`**.
 </details>
 
 ### API keys needed
-- **`GEMINI_API_KEY`** — required (primary model)
-- **`GROQ_API_KEY`** — recommended (fallback if Gemini rate-limits)
+- **`GROQ_API_KEY`** — required for the default `groq/openai/gpt-oss-120b` model
+- **`GEMINI_API_KEY`** — optional (only needed if you configure a Gemini model)
 - The rest (`OPENROUTER`, `TOGETHER`, `HUGGINGFACE`) are reserved for future modules (JARVIS / EDITH)
 
 ---
