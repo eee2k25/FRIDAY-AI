@@ -35,12 +35,14 @@ class ToolRegistry:
         "run_python_code",
     )
 
-    _STOPWORDS = frozenset(
-        "a an and are as at be been but by can could did do does for from had has "
-        "have how i if in into is it its me my not of on or should that the their "
-        "them then there these this to was were what when where which who will "
-        "with would you your".split()
-    )
+    _STOPWORDS = frozenset([
+        "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
+        "can", "could", "did", "do", "does", "for", "from", "had", "has", "have",
+        "how", "i", "if", "in", "into", "is", "it", "its", "me", "my", "not",
+        "of", "on", "or", "should", "that", "the", "their", "them", "then",
+        "there", "these", "this", "to", "was", "were", "what", "when", "where",
+        "which", "who", "will", "with", "would", "you", "your",
+    ])
 
     def __init__(self) -> None:
         self._tools: dict[str, dict] = {}

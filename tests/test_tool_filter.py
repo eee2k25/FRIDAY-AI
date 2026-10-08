@@ -83,7 +83,7 @@ def test_compact_tool_list_is_shorter_and_keeps_names(big_registry):
     compact = big_registry.list_tools(compact=True)
     assert len(compact) < len(full)
     assert all(name in compact for name in ("read_file", "send_email", "noisy_tool"))
-    noisy_line = next(l for l in compact.splitlines() if l.startswith("- noisy_tool:"))
+    noisy_line = next(line for line in compact.splitlines() if line.startswith("- noisy_tool:"))
     assert len(noisy_line) < 100  # one short line, not the full description
 
 
