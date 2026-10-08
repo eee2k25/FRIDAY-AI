@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.5
+# ⚡ F.R.I.D.A.Y. — v1.7
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
