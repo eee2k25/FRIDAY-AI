@@ -52,6 +52,9 @@ def test_normalize_model_strips_ui_noise(raw, clean):
 def test_chat_without_keys_raises(monkeypatch):
     monkeypatch.setattr(config, "GEMINI_API_KEY", None)
     monkeypatch.setattr(config, "GROQ_API_KEY", None)
+    # Ollama is keyless and sits in the default fallback chain, so disable it
+    # explicitly: this test is about cloud providers without keys.
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", False)
     with pytest.raises(LLMError):
         list(LLMEngine().chat([{"role": "user", "content": "hi"}], []))
 
