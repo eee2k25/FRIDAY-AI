@@ -25,6 +25,7 @@ class LLMStreamError(LLMError):
 class LLMEngine:
     def __init__(self, system_prompt: str = "") -> None:
         self.system_prompt = system_prompt
+        self._sdk_skipped: list[str] = []
         self._chain = self._build_chain()
         self._model_index = 0
         self._stats: dict[str, int] = {}
@@ -32,9 +33,15 @@ class LLMEngine:
         self._groq_client = None
         self._gemini_client = None
         if not self._chain:
-            config.logger.error(
-                "No usable API keys in .env — add GEMINI_API_KEY and/or GROQ_API_KEY"
-            )
+            if self._sdk_skipped:
+                config.logger.error(
+                    "Provider SDK(s) missing for: %s — run: pip install -r requirements.txt",
+                    ", ".join(self._sdk_skipped),
+                )
+            else:
+                config.logger.error(
+                    "No usable API keys in .env — add GEMINI_API_KEY and/or GROQ_API_KEY"
+                )
 
     # --------------------------------------------------- chain mgmt ---
     @staticmethod
@@ -68,9 +75,29 @@ class LLMEngine:
             "openai": config.OPENAI_API_KEY,
         }.get(provider)
 
+    @staticmethod
+    def _sdk_available(provider: str) -> bool:
+        """Can this provider's SDK actually be imported right now?
+
+        A keyed model whose SDK is missing (stale venv, partial install) can
+        never serve a request — checking once here keeps the chain honest and
+        the failure diagnosable instead of a mid-stream ModuleNotFoundError.
+        OpenRouter/Together/OpenAI talk raw HTTP via `requests` — always available.
+        """
+        try:
+            if provider == "gemini":
+                from google import genai  # noqa: F401
+            elif provider == "groq":
+                import groq  # noqa: F401
+        except ImportError:
+            return False
+        return True
+
     def _build_chain(self) -> list[tuple[str, str]]:
-        """Ordered (model, provider) pairs, skipping anything with no API key."""
+        """Ordered (model, provider) pairs, skipping anything with no API key
+        or no importable SDK."""
         chain: list[tuple[str, str]] = []
+        self._sdk_skipped = []
         seen: set[str] = set()
         models = [config.PRIMARY_MODEL] + list(config.FALLBACK_MODELS)
         for m in models:
@@ -79,10 +106,19 @@ class LLMEngine:
                 continue
             seen.add(m)
             provider = self._provider_for(m)
-            if self._key_for(provider):
-                chain.append((m, provider))
-            else:
+            if not self._key_for(provider):
                 config.logger.debug("skipping %s — no API key for provider %s", m, provider)
+                continue
+            if not self._sdk_available(provider):
+                config.logger.warning(
+                    "skipping %s — the %s SDK is not installed "
+                    "(fix: pip install -r requirements.txt)",
+                    m,
+                    provider,
+                )
+                self._sdk_skipped.append(m)
+                continue
+            chain.append((m, provider))
         return chain
 
     def set_primary_model(self, model_name: str) -> None:
@@ -107,11 +143,24 @@ class LLMEngine:
         {"function_response": {name, response}}.
         """
         if not self._chain:
-            raise LLMError("No API keys configured. Put GEMINI_API_KEY and/or GROQ_API_KEY in .env")
+            msg = "No usable models: no API keys configured, or every keyed provider's SDK is missing."
+            if self._sdk_skipped:
+                msg += (
+                    " SDK missing for: " + ", ".join(self._sdk_skipped)
+                    + " — fix: pip install -r requirements.txt"
+                )
+            else:
+                msg += " Put GEMINI_API_KEY and/or GROQ_API_KEY in .env"
+            raise LLMError(msg)
         errors: list[str] = []
         attempts = 0
+        # Walk the chain in configured order from a FIXED origin. _model_index
+        # is the sticky "current model" (updated below so the next chat()
+        # resumes at the model that last worked) — mutating it mid-walk made
+        # the fallback order jump (0 → 1 → 3 → 2 …), skipping models out of turn.
+        start = self._model_index
         while attempts <= len(self._chain):
-            idx = (self._model_index + attempts) % len(self._chain)
+            idx = (start + attempts) % len(self._chain)
             model_name, provider = self._chain[idx]
             self._model_index = idx
             self._stats[model_name] = self._stats.get(model_name, 0) + 1
@@ -141,6 +190,7 @@ class LLMEngine:
             "active_model": active[0],
             "provider": active[1],
             "chain": [m for m, _ in self._chain],
+            "sdk_skipped": list(self._sdk_skipped),
             "calls": dict(self._stats),
             "last_error": self._last_error,
         }
@@ -151,7 +201,10 @@ class LLMEngine:
             try:
                 from google import genai
             except ImportError as e:
-                raise LLMError("google-genai SDK not installed. Run: pip install -r requirements.txt") from e
+                raise LLMError(
+                    "google-genai SDK not installed — every Gemini model is offline. "
+                    "Fix: pip install google-genai   (or re-run setup.ps1)"
+                ) from e
             self._gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
         return self._gemini_client
 
@@ -250,7 +303,15 @@ class LLMEngine:
         return contents
 
     def _gemini_stream(self, messages: list[dict], declarations: list[dict], model_name: str):
-        from google.genai import types
+        try:
+            from google.genai import types
+        except ImportError as e:
+            # Wrapped so a missing SDK surfaces as an actionable LLMError, not
+            # a raw ModuleNotFoundError buried in the fallback-chain report.
+            raise LLMError(
+                "google-genai SDK not installed — every Gemini model is offline. "
+                "Fix: pip install google-genai   (or re-run setup.ps1)"
+            ) from e
 
         client = self._get_gemini_client()
         contents = self._to_genai_contents(messages)

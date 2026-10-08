@@ -116,6 +116,19 @@ if (-not (Test-Path $VenvPython)) {
 if ($LASTEXITCODE -ne 0) { throw 'pip install failed — check your internet connection and re-run setup.' }
 Write-Ok 'all Python dependencies installed'
 
+Write-Step 'Verifying Python dependencies import cleanly'
+$depCheck = "import google.genai, groq, rich, docx, openpyxl, pptx, pdfplumber, sympy, pint, ddgs"
+& $VenvPython -c $depCheck 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn2 'some dependencies failed to import — reinstalling requirements once more...'
+    & $VenvPython -m pip install -r (Join-Path $FridayDir 'requirements.txt')
+    & $VenvPython -c $depCheck 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'dependency verification failed — run ".venv\Scripts\pip install -r requirements.txt" manually and read the errors.'
+    }
+}
+Write-Ok 'all core dependencies import cleanly'
+
 # ------------------------------------------------------------------- .env ---
 Write-Step 'Configuring .env'
 $envFile = Join-Path $FridayDir '.env'

@@ -45,19 +45,78 @@ class AgentLoop:
 
     # -------------------------------------------------------- context ---
     def _build_system_prompt(self) -> str:
+        # compact=True: the tools are ALSO sent as structured declarations, so
+        # the prompt carries one short line per tool, not the full descriptions.
+        tool_list = self.registry.list_tools(compact=True)
         if self._persona_builder is not None:
             return self._persona_builder(
-                tool_list=self.registry.list_tools(),
+                tool_list=tool_list,
                 recent_tasks=self._format_recent_tasks(),
                 facts=self._format_facts(),
             )
         from persona import build_system_prompt
 
         return build_system_prompt(
-            tool_list=self.registry.list_tools(),
+            tool_list=tool_list,
             recent_tasks=self._format_recent_tasks(),
             facts=self._format_facts(),
         )
+
+    # -------------------------------------------------- tool filtering ---
+    @staticmethod
+    def _latest_text(messages: list[dict]) -> str:
+        """Newest user/model text in the conversation — the relevance query."""
+        for m in reversed(messages):
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                return c
+            if isinstance(c, list):
+                txt = " ".join(
+                    p["text"] for p in c if isinstance(p, dict) and p.get("text")
+                ).strip()
+                if txt:
+                    return txt
+        return ""
+
+    @staticmethod
+    def _recent_tool_names(messages: list[dict], limit: int = 12) -> list[str]:
+        """Tools already used in this conversation, newest first — the model is
+        likely to keep using them, so they must stay declared."""
+        names: list[str] = []
+        for m in reversed(messages):
+            content = m.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if isinstance(part, dict):
+                    fc = part.get("function_call")
+                    if fc and fc.get("name") and fc["name"] not in names:
+                        names.append(fc["name"])
+            if len(names) >= limit:
+                break
+        return names
+
+    def _select_tools(self, messages: list[dict], pool: list[dict]) -> list[dict]:
+        """Curate the tool declarations for this turn.
+
+        The full 108-tool declaration set costs ~8.6k tokens on every call —
+        more than weak fallback providers allow per minute (Groq on-demand:
+        8k TPM). Filtering to the relevant subset keeps requests small enough
+        for the whole chain. Disable with TOOL_FILTER=False in .env.
+        """
+        if not config.TOOL_FILTER_ENABLED:
+            return pool
+        selected = self.registry.select_declarations(
+            query=self._latest_text(messages),
+            cap=config.MAX_TOOLS_PER_CALL,
+            extra_names=self._recent_tool_names(messages),
+            pool=pool,
+        )
+        if len(selected) < len(pool):
+            config.logger.debug(
+                "tool filter: %d/%d declarations this turn", len(selected), len(pool)
+            )
+        return selected
 
     def _format_recent_tasks(self) -> str:
         tasks = self.memory.get_recent_tasks(5)
@@ -152,6 +211,46 @@ class AgentLoop:
         "recall_fact",
     )
 
+    # System prompt for the emergency diet. The normal prompt carries the full
+    # tool list (~3k tokens) which alone can exceed a weak provider's limit,
+    # so the last-resort retry gets a minimal prompt to match the core tools.
+    EMERGENCY_SYSTEM_PROMPT = (
+        "You are FRIDAY, an autonomous AI agent. A provider token limit forced a "
+        "minimal context: you have the original request, the latest tool "
+        "exchange, and a small core tool set. Complete the task with what you "
+        "have. Be brief, decisive, and exact."
+    )
+
+    # The REQUEST ITSELF is too big for a provider — retrying unchanged can
+    # never succeed, so shrink it. Checked BEFORE the transient rate-limit
+    # branch: Groq's 413 body contains 'rate_limit_exceeded', which must NOT
+    # be mistaken for a transient 429 (that bug made every oversized request
+    # sleep 10s, retry identically, and fail again).
+    _OVERSIZED_SIGNALS = (
+        "413",
+        "request too large",
+        "too many tokens",
+        "tokens per minute",
+        "reduce your message size",
+        "payload too large",
+        "context length",
+        "context window",
+        "maximum context",
+        "prompt is too long",
+        "input too long",
+    )
+    # Transient overload — waiting and retrying unchanged is the right move.
+    _RETRY_SIGNALS = (
+        "429",
+        "resource_exhausted",
+        "rate_limit",
+        "rate limit",
+        "quota",
+        "too many requests",
+        "overloaded",
+        "temporarily unavailable",
+    )
+
     @classmethod
     def _emergency_diet(cls, messages: list[dict], cap: int = 1500) -> list[dict]:
         """Last-resort context: the original ask + the last tool exchange, hard-trimmed."""
@@ -192,15 +291,12 @@ class AgentLoop:
         self, messages: list[dict], declarations: list[dict], stream_error: LLMError
     ):
         """Self-heal a failed round in escalating stages:
-        rate-limit → back off and retry; oversized → context diet, then emergency
-        diet (original ask + last exchange + core tools only).
+        oversized request → context diet, then emergency diet (original ask +
+        last exchange + core tools + minimal system prompt); transient
+        rate-limit/overload → back off and retry unchanged.
         Returns (text_buf, calls, error, messages, declarations)."""
         err = str(stream_error).lower()
-        if any(k in err for k in ("429", "resource_exhausted", "rate_limit", "rate limit", "quota")):
-            self.console.print("[dim]◈ Rate limited — waiting 10s and retrying…[/dim]")
-            time.sleep(10)
-            return self._call_llm(messages, declarations) + (messages, declarations)
-        if any(k in err for k in ("413", "too large", "reduce your message", "tokens per minute", "payload")):
+        if any(k in err for k in self._OVERSIZED_SIGNALS):
             self.console.print("[dim]◈ Request too big — trimming tool results and retrying…[/dim]")
             diet = self._diet_messages(messages)
             result = self._call_llm(diet, declarations)
@@ -209,8 +305,13 @@ class AgentLoop:
             self.console.print("[dim]◈ Still too big — emergency trim (core tools only)…[/dim]")
             emergency = self._emergency_diet(diet)
             core_decls = [d for d in declarations if d.get("name") in self.EMERGENCY_TOOLS]
+            self.llm.set_system_prompt(self.EMERGENCY_SYSTEM_PROMPT)
             result = self._call_llm(emergency, core_decls)
             return result + (emergency, core_decls)
+        if any(k in err for k in self._RETRY_SIGNALS):
+            self.console.print("[dim]◈ Rate limited — waiting 10s and retrying…[/dim]")
+            time.sleep(10)
+            return self._call_llm(messages, declarations) + (messages, declarations)
         return [], [], stream_error, messages, declarations
 
     def _enforce_token_budget(self, messages: list[dict]) -> list[dict]:
@@ -238,6 +339,7 @@ class AgentLoop:
         for iteration in range(1, config.MAX_AGENT_ITERATIONS + 1):
             self._print_thinking(iteration)
             messages = self._enforce_token_budget(messages)
+            declarations = self._select_tools(messages, declarations)
             text_buf, calls, stream_error = self._call_llm(messages, declarations)
             if stream_error is None and not text_buf and not calls:
                 # Totally empty response (happens after large tool results) — retry once
