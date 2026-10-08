@@ -13,6 +13,8 @@ from core.llm_engine import LLMEngine, LLMError
     "model,provider",
     [
         ("gemini-2.5-flash", "gemini"),
+        ("ollama/llama3.2", "ollama"),
+        ("ollama", "ollama"),
         ("groq/llama-3.3-70b-versatile", "groq"),
         ("openrouter/meta-llama/llama-3.3-70b-instruct", "openrouter"),
         ("together/meta-llama/Llama-3.3-70B-Instruct-Turbo", "together"),
@@ -33,6 +35,35 @@ def test_openrouter_model_joins_the_chain_when_keyed(monkeypatch):
     status = LLMEngine().get_model_status()
     assert status["chain"] == ["openrouter/some/model"]
     assert status["provider"] == "openrouter"
+
+
+def test_ollama_joins_the_chain_without_any_external_api_key(monkeypatch):
+    for name in (
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+        "TOGETHER_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.setattr(config, name, None)
+    monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+
+    status = LLMEngine().get_model_status()
+
+    assert status["chain"] == ["ollama/llama3.2"]
+    assert status["provider"] == "ollama"
+
+
+def test_ollama_shorthand_uses_the_configured_model(monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_MODEL", "qwen2.5:7b")
+    assert LLMEngine._normalize_model("ollama") == "ollama/qwen2.5:7b"
+
+
+def test_empty_fallback_environment_setting_disables_fallbacks(monkeypatch):
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "")
+    assert config._get_csv("GEMINI_FALLBACK_MODELS", "gemini-lite,groq/llama") == []
 
 
 class FakeResponse:
@@ -71,6 +102,69 @@ def _patch_post(monkeypatch, response, captured=None):
         return response
 
     monkeypatch.setattr(requests, "post", fake_post)
+
+
+@pytest.fixture()
+def ollama_engine(monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
+    monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(config, "GROQ_API_KEY", None)
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    return LLMEngine("SYS")
+
+
+def test_ollama_compatible_stream_preserves_streaming_and_tool_calls(
+    ollama_engine, monkeypatch
+):
+    lines = [
+        _delta(content="Hello from local Ollama").encode("utf-8"),
+        _delta(
+            tool_calls=[
+                {
+                    "index": 0,
+                    "function": {"name": "get_current_time", "arguments": '{"timezone":"UTC"}'},
+                }
+            ]
+        ),
+        "data: [DONE]",
+    ]
+    captured = {}
+    _patch_post(monkeypatch, FakeResponse(lines), captured)
+    declarations = [
+        {
+            "name": "get_current_time",
+            "description": "Get the current time",
+            "parameters": {"type": "object", "properties": {"timezone": {"type": "string"}}},
+        }
+    ]
+
+    events = list(
+        ollama_engine._openai_compatible_stream(
+            [{"role": "user", "content": "hi"}],
+            declarations,
+            "ollama/llama3.2",
+            "ollama",
+        )
+    )
+
+    assert captured["url"] == "http://ollama.local:11434/v1/chat/completions"
+    assert captured["json"]["model"] == "llama3.2"
+    assert captured["json"]["stream"] is True
+    assert captured["json"]["tools"][0]["function"]["name"] == "get_current_time"
+    assert "Authorization" not in captured["headers"]
+    assert events == [
+        ("text", "Hello from local Ollama"),
+        ("function_call", {"name": "get_current_time", "args": {"timezone": "UTC"}}),
+    ]
+
+
+def test_ollama_endpoint_adds_v1_for_a_server_root(ollama_engine, monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://ollama.local:11434")
+    assert ollama_engine._endpoint_for("ollama") == (
+        "http://ollama.local:11434/v1/chat/completions"
+    )
 
 
 def test_openai_compatible_stream_yields_text(or_engine, monkeypatch):
