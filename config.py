@@ -45,6 +45,7 @@ def _get(name: str, default: str | None = None) -> str | None:
 #   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
+#   ollama/       → Ollama (local/remote) e.g. ollama/llama3.2
 PRIMARY_MODEL = _get("GEMINI_MODEL", "gemini-2.5-flash")
 FALLBACK_MODELS = [
     m.strip()
@@ -62,6 +63,9 @@ TOGETHER_API_KEY = _get("TOGETHER_API_KEY")
 OPENAI_API_KEY = _get("OPENAI_API_KEY")
 # Any OpenAI-compatible endpoint can be used with OPENAI_BASE_URL.
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+OLLAMA_MODEL = _get("OLLAMA_MODEL", "llama3.2")
+OLLAMA_ENABLED = _get("OLLAMA_ENABLED", "True").strip().lower() in ("1", "true", "yes")
 HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---

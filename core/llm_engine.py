@@ -33,7 +33,7 @@ class LLMEngine:
         self._gemini_client = None
         if not self._chain:
             config.logger.error(
-                "No usable API keys in .env — add GEMINI_API_KEY and/or GROQ_API_KEY"
+                "No usable model providers in .env — configure an API key (Gemini/Groq/etc.) or enable Ollama"
             )
 
     # --------------------------------------------------- chain mgmt ---
@@ -53,6 +53,7 @@ class LLMEngine:
             ("openrouter/", "openrouter"),
             ("together/", "together"),
             ("openai/", "openai"),
+            ("ollama/", "ollama"),
         ):
             if low.startswith(prefix):
                 return provider
@@ -66,10 +67,11 @@ class LLMEngine:
             "openrouter": config.OPENROUTER_API_KEY,
             "together": config.TOGETHER_API_KEY,
             "openai": config.OPENAI_API_KEY,
+            "ollama": "enabled" if config.OLLAMA_ENABLED else None,
         }.get(provider)
 
     def _build_chain(self) -> list[tuple[str, str]]:
-        """Ordered (model, provider) pairs, skipping anything with no API key."""
+        """Ordered (model, provider) pairs, skipping unavailable providers."""
         chain: list[tuple[str, str]] = []
         seen: set[str] = set()
         models = [config.PRIMARY_MODEL] + list(config.FALLBACK_MODELS)
@@ -82,7 +84,7 @@ class LLMEngine:
             if self._key_for(provider):
                 chain.append((m, provider))
             else:
-                config.logger.debug("skipping %s — no API key for provider %s", m, provider)
+                config.logger.debug("skipping %s — provider %s is not configured/enabled", m, provider)
         return chain
 
     def set_primary_model(self, model_name: str) -> None:
@@ -107,7 +109,9 @@ class LLMEngine:
         {"function_response": {name, response}}.
         """
         if not self._chain:
-            raise LLMError("No API keys configured. Put GEMINI_API_KEY and/or GROQ_API_KEY in .env")
+            raise LLMError(
+                "No model providers configured. Add provider API key(s) or set GEMINI_MODEL=ollama/<model> with OLLAMA_ENABLED=True."
+            )
         errors: list[str] = []
         attempts = 0
         while attempts <= len(self._chain):
@@ -331,6 +335,7 @@ class LLMEngine:
         "openrouter": "https://openrouter.ai/api/v1/chat/completions",
         "together": "https://api.together.xyz/v1/chat/completions",
         "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+        "ollama": f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions",
     }
 
     @staticmethod
@@ -350,17 +355,21 @@ class LLMEngine:
     ):
         """Stream from any OpenAI-compatible chat-completions endpoint.
 
-        Used for OpenRouter and Together AI. Talks raw SSE over `requests` so
-        FRIDAY gains two more fallback providers with zero new dependencies.
+        Used for OpenRouter, Together, OpenAI-style hosts and Ollama. Talks raw
+        SSE over `requests` so FRIDAY gains fallback providers with zero new
+        dependencies.
         """
         import requests
 
         url = self.OPENAI_COMPATIBLE_ENDPOINTS[provider]
+        if provider == "openai":
+            url = f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
+        elif provider == "ollama":
+            url = f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions"
         model_id = model_name.split("/", 1)[1]
-        headers = {
-            "Authorization": f"Bearer {self._key_for(provider)}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if provider != "ollama":
+            headers["Authorization"] = "Bearer " + (self._key_for(provider) or "")
         if provider == "openrouter":
             headers["X-Title"] = "FRIDAY"
         payload = {
@@ -372,8 +381,24 @@ class LLMEngine:
         if declarations:
             payload["tools"] = [{"type": "function", "function": d} for d in declarations]
 
-        resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        try:
+            resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=180)
+        except requests.exceptions.RequestException as e:
+            if provider == "ollama":
+                raise LLMError(
+                    "Cannot reach Ollama at "
+                    f"{config.OLLAMA_BASE_URL}. Ensure `ollama serve` is running, the URL is "
+                    "reachable from this FRIDAY process, and the model is pulled "
+                    f"(e.g. `ollama pull {model_id}`)."
+                ) from e
+            raise
         if resp.status_code >= 400:
+            if provider == "ollama":
+                raise LLMError(
+                    f"Ollama request failed (HTTP {resp.status_code}) at {config.OLLAMA_BASE_URL}. "
+                    "Check that `ollama serve` is running, the URL is correct, and the model is "
+                    f"available (`ollama pull {model_id}`). Response: {resp.text[:300]}"
+                )
             raise LLMError(f"{provider} HTTP {resp.status_code}: {resp.text[:300]}")
 
         pending: dict[int, dict] = {}
