@@ -35,17 +35,13 @@ class LLMEngine:
         self._gemini_client = None
         if not self._chain:
             config.logger.error(
-                "No usable model providers in .env — configure an API key (Gemini/Groq/etc.) or enable Ollama"
+                "No usable model providers in .env — configure an API key "
+                "(Gemini/Groq/OpenRouter/Together/OpenAI) or enable Ollama"
             )
             if self._sdk_skipped:
                 config.logger.error(
                     "Provider SDK(s) missing for: %s — run: pip install -r requirements.txt",
                     ", ".join(self._sdk_skipped),
-                )
-            else:
-                config.logger.error(
-                    "No usable model providers configured — add a provider API key or "
-                    "select a local model such as ollama/llama3.2"
                 )
 
     # --------------------------------------------------- chain mgmt ---
@@ -71,7 +67,6 @@ class LLMEngine:
             ("openrouter/", "openrouter"),
             ("together/", "together"),
             ("openai/", "openai"),
-            ("ollama/", "ollama"),
         ):
             if low.startswith(prefix):
                 return provider
@@ -79,19 +74,31 @@ class LLMEngine:
 
     @staticmethod
     def _key_for(provider: str) -> str | None:
+        """API credential for a provider.
+
+        Ollama is a local service and has no credential — it is gated by
+        `OLLAMA_ENABLED` in `_provider_is_ready` instead, so this never
+        invents a fake key that would be sent as a bogus Authorization header.
+        """
         return {
             "gemini": config.GEMINI_API_KEY,
             "groq": config.GROQ_API_KEY,
             "openrouter": config.OPENROUTER_API_KEY,
             "together": config.TOGETHER_API_KEY,
             "openai": config.OPENAI_API_KEY,
-            "ollama": "enabled" if config.OLLAMA_ENABLED else None,
         }.get(provider)
 
     @staticmethod
     def _requires_api_key(provider: str) -> bool:
         """Ollama is a local service and does not require an API credential."""
         return provider != "ollama"
+
+    @classmethod
+    def _provider_is_ready(cls, provider: str) -> bool:
+        """Can this provider serve requests: keyed (or keyless Ollama, when enabled)?"""
+        if provider == "ollama":
+            return bool(config.OLLAMA_ENABLED)
+        return bool(cls._key_for(provider))
 
     @staticmethod
     def _sdk_available(provider: str) -> bool:
@@ -113,7 +120,6 @@ class LLMEngine:
         return True
 
     def _build_chain(self) -> list[tuple[str, str]]:
-        """Ordered (model, provider) pairs, skipping unavailable providers."""
         """Ordered (model, provider) pairs, skipping missing credentials/SDKs.
 
         Ollama is local and keyless; all other providers require their API key.
@@ -128,12 +134,10 @@ class LLMEngine:
                 continue
             seen.add(m)
             provider = self._provider_for(m)
-            if self._key_for(provider):
-                chain.append((m, provider))
-            else:
-                config.logger.debug("skipping %s — provider %s is not configured/enabled", m, provider)
-            if self._requires_api_key(provider) and not self._key_for(provider):
-                config.logger.debug("skipping %s — no API key for provider %s", m, provider)
+            if not self._provider_is_ready(provider):
+                config.logger.debug(
+                    "skipping %s — provider %s is not configured/enabled", m, provider
+                )
                 continue
             if not self._sdk_available(provider):
                 config.logger.warning(
@@ -169,9 +173,6 @@ class LLMEngine:
         {"function_response": {name, response}}.
         """
         if not self._chain:
-            raise LLMError(
-                "No model providers configured. Add provider API key(s) or set GEMINI_MODEL=ollama/<model> with OLLAMA_ENABLED=True."
-            )
             msg = "No usable models: configure a provider API key or select a local Ollama model."
             if self._sdk_skipped:
                 msg += (
@@ -179,7 +180,10 @@ class LLMEngine:
                     + " — fix: pip install -r requirements.txt"
                 )
             else:
-                msg += " For example, set GEMINI_MODEL=ollama/llama3.2 in .env."
+                msg += (
+                    " For example, set GEMINI_MODEL=ollama/llama3.2 in .env"
+                    " with OLLAMA_ENABLED=True."
+                )
             raise LLMError(msg)
         errors: list[str] = []
         attempts = 0
@@ -453,21 +457,6 @@ class LLMEngine:
     ):
         """Stream from an OpenAI-compatible chat-completions endpoint.
 
-        Used for OpenRouter, Together, OpenAI-style hosts and Ollama. Talks raw
-        SSE over `requests` so FRIDAY gains fallback providers with zero new
-        dependencies.
-        """
-        import requests
-
-        url = self.OPENAI_COMPATIBLE_ENDPOINTS[provider]
-        if provider == "openai":
-            url = f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
-        elif provider == "ollama":
-            url = f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions"
-        model_id = model_name.split("/", 1)[1]
-        headers = {"Content-Type": "application/json"}
-        if provider != "ollama":
-            headers["Authorization"] = "Bearer " + (self._key_for(provider) or "")
         OpenRouter, Together and OpenAI use this adapter alongside local
         Ollama. Raw SSE over `requests` keeps the adapter dependency-free.
         """
@@ -478,9 +467,11 @@ class LLMEngine:
         if provider == "ollama" and (model_name.lower() == "ollama" or not model_id):
             model_id = config.OLLAMA_MODEL
         headers = {"Content-Type": "application/json"}
-        api_key = self._key_for(provider)
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        # Ollama is local and keyless — never send it an Authorization header.
+        if provider != "ollama":
+            api_key = self._key_for(provider)
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
         if provider == "openrouter":
             headers["X-Title"] = "FRIDAY"
         payload = {
