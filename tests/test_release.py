@@ -32,13 +32,25 @@ def test_config_reports_the_release_version():
     assert config.FRIDAY_VERSION == VERSION or config.FRIDAY_VERSION
 
 
-def test_pyproject_matches_the_version_module():
-    import tomllib
+def _pyproject_version() -> str:
+    """Read `version` from the [project] table without tomllib.
 
+    tomllib only exists on Python 3.11+, and this project supports 3.10 — using
+    it here made the py3.10 CI leg fail on import.
+    """
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    section = text.split("[project]", 1)
+    assert len(section) == 2, "pyproject.toml has no [project] table"
+    body = section[1].split("\n[", 1)[0]
+    found = re.search(r'^\s*version\s*=\s*"([^"]+)"', body, flags=re.MULTILINE)
+    assert found, "no version key in the [project] table"
+    return found.group(1)
+
+
+def test_pyproject_matches_the_version_module():
     from version import VERSION
 
-    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert data["project"]["version"] == VERSION
+    assert _pyproject_version() == VERSION
 
 
 def test_env_example_matches_the_version_module():
