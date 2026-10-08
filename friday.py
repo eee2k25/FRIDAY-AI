@@ -135,7 +135,8 @@ def main() -> None:
         )
     if not status["chain"]:
         console.print(
-            "[red]No API keys found. Add GEMINI_API_KEY (and/or GROQ_API_KEY) to .env, then restart.[/red]"
+            "[red]No usable model configured. Add a provider API key, or set "
+            "GEMINI_MODEL=ollama/llama3.2 for local Ollama.[/red]"
         )
     for problem in _sdk_problems():
         console.print(f"[yellow]⚠ {problem}[/yellow]")
