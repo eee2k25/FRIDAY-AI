@@ -170,3 +170,23 @@ def test_successful_model_becomes_the_sticky_start(keys, monkeypatch):
     assert list(engine.chat([{"role": "user", "content": "again"}], [])) == [("text", "ok")]
     # second call resumes at groq/x — gemini-a is not retried first
     assert tried == ["gemini-a", "groq/x", "groq/x"]
+
+
+def test_single_model_chain_reports_the_failure_once(monkeypatch):
+    """Regression: a one-model chain lists the failure exactly once — the
+    broken build printed the same error twice in the exhausted-chain report."""
+    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(config, "GROQ_API_KEY", None)
+    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
+    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
+    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    engine = LLMEngine()
+
+    def dead(*_a, **_k):
+        raise RuntimeError("HTTP 504 gateway timeout")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(engine, "_openai_compatible_stream", dead)
+    with pytest.raises(LLMError) as exc:
+        list(engine.chat([{"role": "user", "content": "hi"}], []))
+    assert str(exc.value).count("ollama/llama3.2") == 1
