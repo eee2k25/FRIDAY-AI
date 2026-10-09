@@ -368,10 +368,20 @@ class AgentLoop:
                     messages, declarations, stream_error
                 )
             if stream_error is not None:
-                msg = (
-                    f"⚠ Something broke mid-stream, Boss. The fallback chain was exhausted: "
-                    f"{stream_error}. Ask again and I'll reroute."
-                )
+                chain = self.llm.get_model_status().get("chain") or []
+                if len(chain) == 1:
+                    # No fallback exists — name the real problem instead of
+                    # blaming an exhausted chain.
+                    msg = (
+                        f"⚠ Boss, {chain[0]} is the only model configured and it just failed: "
+                        f"{stream_error}. Nothing to fall back to — check that the provider "
+                        "is up (`python friday.py --doctor`), then ask again."
+                    )
+                else:
+                    msg = (
+                        f"⚠ Something broke mid-stream, Boss. The fallback chain was "
+                        f"exhausted: {stream_error}. Ask again and I'll reroute."
+                    )
                 self.memory.add_message(session_id, "model", msg)
                 self._complete_task(task_id, f"stopped: {stream_error}", "error")
                 self.console.print(f"[red]{msg}[/red]")

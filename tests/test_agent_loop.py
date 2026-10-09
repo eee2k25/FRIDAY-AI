@@ -121,3 +121,49 @@ def test_emergency_diet_keeps_first_ask_and_last_exchange():
 def test_emergency_diet_never_returns_empty():
     msgs = [{"role": "user", "content": [{"text": "only a part"}]}]
     assert AgentLoop._emergency_diet(msgs)
+
+
+def _dead_engine(chain):
+    from core.llm_engine import LLMError
+
+    class DeadEngine:
+        def __init__(self):
+            self.system_prompt = ""
+
+        def set_system_prompt(self, prompt):
+            self.system_prompt = prompt
+
+        def chat(self, messages, declarations):
+            raise LLMError("Ollama HTTP 504 at http://ollama.local — check `ollama serve`")
+            yield  # pragma: no cover
+
+        def get_model_status(self):
+            return {
+                "active_model": chain[0],
+                "provider": "ollama",
+                "chain": list(chain),
+                "calls": {},
+                "last_error": None,
+            }
+
+    return DeadEngine()
+
+
+def test_single_model_failure_names_the_model_and_doctor(tmp_memory):
+    """One configured model → no 'exhausted fallback chain' blame; name the
+    model and point at the diagnosis command."""
+    agent = AgentLoop(
+        _dead_engine(["ollama/llama3.2"]), ToolRegistry(), tmp_memory, persona=lambda **kw: "SYS"
+    )
+    out = agent.run("hi", "s-dead")
+    assert "ollama/llama3.2" in out
+    assert "--doctor" in out
+    assert "fallback chain was exhausted" not in out
+
+
+def test_multi_model_failure_keeps_the_exhausted_chain_message(tmp_memory):
+    agent = AgentLoop(
+        _dead_engine(["gemini-a", "groq/b"]), ToolRegistry(), tmp_memory, persona=lambda **kw: "SYS"
+    )
+    out = agent.run("hi", "s-dead2")
+    assert "fallback chain was exhausted" in out

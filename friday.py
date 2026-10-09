@@ -80,6 +80,26 @@ def _sdk_problems() -> list[str]:
     return problems
 
 
+def _ollama_base() -> str:
+    """Configured Ollama root with the OpenAI-compatible /v1 suffix."""
+    base = config.OLLAMA_BASE_URL.strip().rstrip("/")
+    if not base.endswith("/v1"):
+        base += "/v1"
+    return base
+
+
+def _ollama_reachable() -> tuple[bool, str]:
+    """Probe Ollama with a real HTTP request — a socket can open while TLS or
+    the server itself is broken, so ask for an actual answer. Never raises."""
+    try:
+        import requests
+
+        resp = requests.get(f"{_ollama_base()}/models", timeout=5)
+        return resp.status_code < 500, f"HTTP {resp.status_code}"
+    except Exception as e:  # noqa: BLE001 — a probe reports, it never raises
+        return False, type(e).__name__
+
+
 def _doctor() -> int:
     """Offline health check: prints what is configured and what is missing.
 
@@ -119,19 +139,8 @@ def _doctor() -> int:
 
     # --- local Ollama, only when it is part of the chain ------------------
     if any(p == "ollama" for _, p in LLMEngine()._chain):
-        base = config.OLLAMA_BASE_URL.strip().rstrip("/")
-        if not base.endswith("/v1"):
-            base += "/v1"
-        # A real HTTP request, not a bare TCP connect: a socket can open while
-        # TLS or the server itself is broken. Any HTTP answer means it is up.
-        reachable, detail = False, ""
-        try:
-            import requests
-
-            resp = requests.get(f"{base}/models", timeout=5)
-            reachable, detail = resp.status_code < 500, f"HTTP {resp.status_code}"
-        except Exception as e:  # noqa: BLE001 — doctor reports, never raises
-            detail = type(e).__name__
+        base = _ollama_base()
+        reachable, detail = _ollama_reachable()
         console.print(
             f"[cyan]ollama[/cyan]      {base} "
             f"{'reachable' if reachable else 'NOT reachable'} ({detail})"
@@ -227,6 +236,16 @@ def main() -> None:
         )
     for problem in _sdk_problems():
         console.print(f"[yellow]⚠ {problem}[/yellow]")
+    if status["provider"] == "ollama" and len(status["chain"]) == 1:
+        # Fragile setup: Ollama is the ONLY model, so a dead endpoint means a
+        # dead FRIDAY. Say so at boot instead of after the first failed message.
+        reachable, detail = _ollama_reachable()
+        if not reachable:
+            console.print(
+                f"[red]⚠ Ollama is not answering at {config.OLLAMA_BASE_URL} ({detail}) — "
+                "every message will fail until it is up. Start it with `ollama serve`, "
+                "or run `python friday.py --doctor` for a full diagnosis.[/red]"
+            )
 
     # 3 — main loop
     session_id = str(uuid.uuid4())
