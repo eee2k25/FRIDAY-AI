@@ -88,6 +88,67 @@ def _ollama_base() -> str:
     return base
 
 
+def _ollama_hint() -> list[str]:
+    """Copy-pasteable fixes for an Ollama endpoint FRIDAY cannot use.
+
+    Ordering matters: the server being *down* is far more common than it being
+    misconfigured, and in a Codespace "down" is the default state after every
+    stop/start because the container has no systemd to bring it back.
+    """
+    import os
+    import re
+    import shutil
+    from pathlib import Path
+
+    out: list[str] = []
+    base = (config.OLLAMA_BASE_URL or "").strip()
+    # Whatever port .env actually uses — a Codespace may run a second server on
+    # 11435, and telling someone to open the wrong port wastes their time.
+    port = (re.search(r":(\d+)", base) or [None, "11434"])[1]
+    local = f"http://127.0.0.1:{port}/v1"
+    public = ""
+    try:  # helper is new; an older config.py must not break the doctor
+        public = config.codespace_ollama_url()  # type: ignore[attr-defined]
+    except AttributeError:
+        pass
+
+    if shutil.which("ollama") is None and not Path("/usr/local/bin/ollama").exists():
+        out.append("ollama is not installed here — run: ./setup.sh --with-ollama")
+    else:
+        out.append("start the server: bash deploy/codespaces/ollama-server.sh start")
+
+    if base and local not in base and not base.startswith(("http://localhost", "http://127.0.0.1")):
+        out.append(f"OLLAMA_BASE_URL points at {base}, not this machine — in-Codespace use {local}")
+    if public:
+        name = os.environ.get("CODESPACE_NAME", "")
+        out.append(
+            f"sharing it outside this Codespace needs: "
+            f"gh codespace ports visibility {port}:org -c {name}"
+        )
+    return out
+
+
+def _ollama_served_models() -> tuple[list[str], str]:
+    """Model ids the configured endpoint actually serves, or ([], reason).
+
+    A running server with the wrong model name in `.env` is the failure that
+    looks like "FRIDAY is silent", and `/api/tags` alone cannot see it.
+    """
+    try:
+        import requests
+
+        resp = requests.get(f"{_ollama_base()}/models", timeout=10)
+        if resp.status_code >= 400:
+            return [], f"HTTP {resp.status_code}"
+        payload = resp.json()
+        # OpenAI shape {"data":[{"id":...}]}, native shape {"models":[{"name":...}]}
+        rows = payload.get("data") or payload.get("models") or []
+        ids = [str(r.get("id") or r.get("name") or "") for r in rows]
+        return [i for i in ids if i], ""
+    except Exception as e:  # noqa: BLE001 — a probe reports, it never raises
+        return [], type(e).__name__
+
+
 def _ollama_reachable() -> tuple[bool, str]:
     """Probe Ollama with a real HTTP request — a socket can open while TLS or
     the server itself is broken, so ask for an actual answer. Never raises."""
@@ -151,6 +212,40 @@ def _doctor() -> int:
                 f"Ollama is not answering at {base} — start it with `ollama serve` "
                 "in another terminal (a Codespace restart stops it), or fix OLLAMA_BASE_URL"
             )
+            for line in _ollama_hint():
+                console.print(f"           [yellow]-> {line}[/yellow]")
+        else:
+            # Reachable is necessary, not sufficient: the model can still be
+            # missing, which is the failure that looks like "she is silent".
+            served, why = _ollama_served_models()
+            console.print(
+                f"[cyan]ollama models[/cyan] "
+                f"{', '.join(served[:4]) if served else f'unknown ({why})'}"
+            )
+            # Check the id FRIDAY will actually send — FRIDAY_MODEL=ollama/x
+            # wins over OLLAMA_MODEL, so reading only the latter would pass a
+            # .env whose primary model does not exist.
+            wanted = [
+                m.split("/", 1)[1] if m.startswith("ollama/") else m
+                for m, prov in LLMEngine()._chain
+                if prov == "ollama"
+            ] or ([config.OLLAMA_MODEL] if config.OLLAMA_MODEL else [])
+            missing = [
+                w
+                for w in wanted
+                if served
+                and not any(
+                    s == w or s.split(":")[0] == w.split(":")[0] for s in served
+                )
+            ]
+            if missing:
+                problems.append(
+                    f"Ollama at {base} does not serve '{missing[0]}' — pull it "
+                    f"(ollama pull {missing[0]}) or set OLLAMA_MODEL/FRIDAY_MODEL "
+                    f"to one of: {', '.join(served[:4])}"
+                )
+            for line in _ollama_hint()[1:]:
+                console.print(f"           [dim]-> {line}[/dim]")
 
     # --- tools -----------------------------------------------------------
     discovery = ToolRegistry().auto_discover()
@@ -243,8 +338,12 @@ def main() -> None:
         if not reachable:
             console.print(
                 f"[red]⚠ Ollama is not answering at {config.OLLAMA_BASE_URL} ({detail}) — "
-                "every message will fail until it is up. Start it with `ollama serve`, "
-                "or run `python friday.py --doctor` for a full diagnosis.[/red]"
+                "every message will fail until it is up.[/red]"
+            )
+            for line in _ollama_hint():
+                console.print(f"[yellow]  -> {line}[/yellow]")
+            console.print(
+                "[yellow]  -> or run `python friday.py --doctor` for a full diagnosis.[/yellow]"
             )
 
     # 3 — main loop

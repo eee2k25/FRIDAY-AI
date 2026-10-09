@@ -5,21 +5,47 @@
     "ghcr.io/devcontainers/features/git:1": {}
   },
   // Install dependencies and the global `friday` command. Ollama is NOT
-  // installed here — its model download is ~2 GB and would slow down every
-  // Codespace start. Opt in with:  ./setup.sh --with-ollama
+  // installed here — its model download is ~2 GB (plus a ~1.5 GB binary) and
+  // would slow down every Codespace start. Opt in with:  ./setup.sh --with-ollama
+  // or:  bash deploy/codespaces/ollama-server.sh install
   "postCreateCommand": "pip install -r requirements.txt && ./setup.sh",
+  // Runs on every container start, including each resume from *stopped* — which
+  // is exactly when `ollama serve` would otherwise be gone. No systemd exists in
+  // a devcontainer, so this hook is the service manager. FRIDAY_OLLAMA=auto (the
+  // default) only starts a server that was already installed here once; it never
+  // downloads anything behind your back. Set FRIDAY_OLLAMA=on as a Codespace
+  // secret/variable to install+start on first boot, or off to skip it entirely.
+  "postStartCommand": "bash .devcontainer/start-ollama.sh",
+  // 11434 is Ollama. Forwarding it is what makes the server reachable from a
+  // browser or a teammate's machine; FRIDAY itself keeps using 127.0.0.1.
+  // "onAutoForward": "ignore" stops a preview tab opening on every start, and
+  // visibility stays private until you choose:
+  //   gh codespace ports visibility 11434:org -c "$CODESPACE_NAME"
+  "forwardPorts": [11434],
+  "portsAttributes": {
+    "11434": {
+      "label": "FRIDAY - Ollama",
+      "protocol": "http",
+      "onAutoForward": "ignore"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
       "settings": {
         "terminal.integrated.defaultProfile.linux": "bash"
       }
+    },
+    "codespaces": {
+      "openFiles": ["CODESPACES_GUIDE.md"]
     }
   },
-  // Forward no ports needed - FRIDAY is terminal only. Codespaces terminal is your chat.
   "remoteEnv": {
     "PYTHONUNBUFFERED": "1",
     // ~/.local/bin is where setup.sh installs the `friday` launcher.
-    "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}"
+    "PATH": "/home/vscode/.local/bin:${containerEnv:PATH}",
+    // The `ollama` CLI in your terminal talks to localhost; only the server
+    // process binds 0.0.0.0, and only so port-forwarding can reach it.
+    "OLLAMA_HOST": "127.0.0.1:11434"
   }
 }
