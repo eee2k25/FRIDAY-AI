@@ -109,11 +109,39 @@ OPENAI_API_KEY = _get("OPENAI_API_KEY")
 DEEPSEEK_API_KEY = _get("DEEPSEEK_API_KEY")
 # Any OpenAI-compatible endpoint can be used with OPENAI_BASE_URL.
 OPENAI_BASE_URL = _get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-# Ollama is keyless. Default: the team Ollama endpoint (OpenAI-compatible /v1).
-# Point OLLAMA_BASE_URL at your own host (e.g. http://127.0.0.1:11434/v1) to override.
-OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1")
+# Ollama is keyless. The default is a server on the *same* machine or Codespace;
+# set OLLAMA_BASE_URL to reach one elsewhere (e.g. http://192.168.1.20:11434/v1).
+#
+# Why localhost and not the Codespace's forwarded URL: `*.app.github.dev` needs
+# the port's visibility set to org/public (otherwise every call 302s to a GitHub
+# sign-in page) and round-trips through GitHub's proxy. A browser or a teammate
+# needs it; FRIDAY, running in the same Codespace, never does. An earlier release
+# shipped one such URL as the default, and it died with the Codespace it was
+# minted from — which is how a "working" setup turns into a ConnectionError for
+# everyone else. The URL is derived from the environment instead; see
+# codespace_ollama_url() and `python friday.py --doctor`.
+OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
 OLLAMA_MODEL = _get("OLLAMA_MODEL", "llama3.2")
 OLLAMA_ENABLED = _get("OLLAMA_ENABLED", "True").strip().lower() in ("1", "true", "yes")
+
+
+def codespace_ollama_url(port: int = 11434) -> str:
+    """Public, port-forwarded Ollama URL for *this* Codespace — or "".
+
+    Codespaces mints it as https://<CODESPACE_NAME>-<port>.<forwarding domain>,
+    both of which are injected into the container, so it can be derived at
+    runtime instead of being pasted into a config file by hand. It is a
+    diagnostic and sharing aid only: FRIDAY should always talk to Ollama over
+    127.0.0.1 when both live in the same Codespace.
+    """
+    name = (os.getenv("CODESPACE_NAME") or "").strip()
+    if not name:
+        return ""
+    domain = (
+        os.getenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN") or "app.github.dev"
+    ).strip()
+    return f"https://{name}-{port}.{domain}/v1"
+
 HUGGINGFACE_TOKEN = _get("HUGGINGFACE_TOKEN")
 
 # ---------------------------------------------------------------- agent ---

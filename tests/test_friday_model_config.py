@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
+from pathlib import Path
 
 import pytest
 
@@ -345,13 +347,56 @@ def test_ollama_streams_text_and_tool_calls(ollama, monkeypatch):
 
 
 # ------------------------------------------------------- Ollama endpoint ---
-TEAM_OLLAMA_URL = "https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1"
+LOCAL_OLLAMA_URL = "http://127.0.0.1:11434/v1"
 
 
-def test_ollama_defaults_to_the_team_endpoint(clean_env, monkeypatch):
+def test_ollama_defaults_to_the_local_endpoint(clean_env, monkeypatch):
+    """The default must be a server on the same machine.
+
+    v1.8 shipped a specific Codespace's forwarded-port URL as the default. Such
+    a URL dies with the Codespace that minted it, and needs that port's
+    visibility set to org/public to answer at all, so a clean clone failed on
+    the first prompt for everyone who was not the original owner.
+    """
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     importlib.reload(config)
-    assert config.OLLAMA_BASE_URL == TEAM_OLLAMA_URL
+    assert config.OLLAMA_BASE_URL == LOCAL_OLLAMA_URL
+    assert "app.github.dev" not in config.OLLAMA_BASE_URL
+
+
+def test_no_hardcoded_codespace_url_survives_in_the_shipped_config(clean_env, monkeypatch):
+    """Guard against pasting one Codespace's URL back into a default or example."""
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    importlib.reload(config)
+    for rel in ("config.py", ".env.example"):
+        text = (Path(config.__file__).parent / rel).read_text(encoding="utf-8")
+        leaked = re.findall(r"https://[a-z0-9][a-z0-9-]*-\d+\.(?:preview\.)?app\.github\.dev", text)
+        assert not leaked, f"{rel} hardcodes a Codespace-specific URL: {leaked}"
+
+
+def test_codespace_public_url_is_derived_not_pasted(clean_env, monkeypatch):
+    """Inside a Codespace the sharing URL is computable from the environment."""
+    monkeypatch.setenv("CODESPACE_NAME", "octocat-literate-space-parakeet-mld5")
+    monkeypatch.setenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "app.github.dev")
+    importlib.reload(config)
+    assert config.codespace_ollama_url() == (
+        "https://octocat-literate-space-parakeet-mld5-11434.app.github.dev/v1"
+    )
+
+
+def test_codespace_public_url_honours_the_port_and_legacy_domain(clean_env, monkeypatch):
+    monkeypatch.setenv("CODESPACE_NAME", "octocat-cs-abc")
+    monkeypatch.setenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "preview.app.github.dev")
+    importlib.reload(config)
+    assert config.codespace_ollama_url(11439) == (
+        "https://octocat-cs-abc-11439.preview.app.github.dev/v1"
+    )
+
+
+def test_codespace_public_url_is_empty_off_a_codespace(clean_env, monkeypatch):
+    monkeypatch.delenv("CODESPACE_NAME", raising=False)
+    importlib.reload(config)
+    assert config.codespace_ollama_url() == ""
 
 
 def test_ollama_base_url_can_be_overridden(clean_env, monkeypatch):

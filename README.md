@@ -43,6 +43,18 @@ exists — file written, report created — not until she gets stuck.
 python friday.py --doctor     # verify the install before trusting it
 ```
 
+In a **GitHub Codespace**, add the model-server lifecycle on top — a Codespace is
+a container with no systemd, so a bare `ollama serve` does not come back after a
+stop/start:
+
+```bash
+bash deploy/codespaces/ollama-server.sh install   # + pull llama3.2 + wire .env
+bash deploy/codespaces/ollama-server.sh status    # server, models, wiring
+```
+
+See [CODESPACES_GUIDE.md](CODESPACES_GUIDE.md) for autostart on resume, port
+forwarding, model sizing for a 2-core container, and troubleshooting.
+
 No admin rights are used: everything lands in the checkout plus `~/.local/bin`.
 If that directory is not on your `PATH`, the installer prints the exact
 `export PATH=...` line to add. In a Codespace this runs automatically via the
@@ -53,7 +65,8 @@ devcontainer.
 | `friday` | start her from any directory |
 | `python friday.py --doctor` | report Python, `.env`, active model, Ollama reachability, tool count |
 | `python friday.py --version` | print the version |
-| `./setup.sh --ollama-only` | (re)start Ollama after a Codespace restart |
+| `./setup.sh --ollama-only` | (re)install/start Ollama only — no Python side |
+| `bash deploy/codespaces/ollama-server.sh start` | bring the Codespace model server back after a restart |
 | `./setup.sh --uninstall` | remove the global `friday` command |
 
 > The command is lowercase `friday`. `FRIDAY` will not be found.
@@ -330,9 +343,16 @@ FRIDAY_FALLBACK_MODELS=gemini-2.5-flash,groq/llama-3.3-70b-versatile
 You can also add `openrouter/...`, `together/...`, or `openai/...` models using
 the provider prefixes above. Leaving this setting empty preserves the
 local-only chain.
-### Ollama setup (local or remote)
 
 ### Local-only setup with Ollama
+
+In a GitHub Codespace (or any container without systemd) use the helper instead
+of steps 1–5 — it installs, starts, pulls, wires `.env`, and survives restarts:
+
+```bash
+bash deploy/codespaces/ollama-server.sh install
+bash deploy/codespaces/ollama-server.sh test      # one real chat completion
+```
 
 1. Install [Ollama](https://ollama.com/download) on the machine/container that
    will run the Ollama server.
@@ -383,21 +403,29 @@ FRIDAY's environment, not Ollama's. Set `OLLAMA_BASE_URL` to the Ollama server's
 reachable network address, including `/v1` (for example,
 `http://<reachable-host>:11434/v1`). Avoid exposing the Ollama port publicly;
 prefer a private/shared network or run both processes in the same Codespace.
-**v1.8 ships with the team Ollama endpoint as its default**:
+
+**Ollama is the keyless default, and its endpoint defaults to this machine**:
 
 ```env
-OLLAMA_BASE_URL=https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
 ```
 
-Ollama is keyless and is the **last** model in the default fallback chain
+Do not put a GitHub Codespaces forwarded-port URL (`https://<codespace>-11434.app.github.dev`)
+in `.env` as a default for a team. That URL is minted per Codespace, dies with it,
+and only answers once the port's visibility is set to `org`/`public` — which
+exposes an unauthenticated Ollama to anyone with the link. `config.codespace_ollama_url()`
+derives the correct sharing URL from the environment when you genuinely need one,
+and `python friday.py --doctor` prints it.
+
+Ollama is the **last** model in the default fallback chain
 (`gemini-2.5-flash` → `gemini-2.5-flash-lite` → `groq/llama-3.3-70b-versatile` →
-`ollama`), so cloud models are still tried first. To make it the primary model,
-or to use your own server, set these in `.env` (remove the cloud fallbacks if you
-want every request to stay on Ollama):
+`ollama`), so configured cloud models are still tried first. To make it the
+primary model, set these in `.env` (this is exactly what
+`deploy/codespaces/ollama-server.sh install` writes):
 
 ```env
 OLLAMA_ENABLED=True
-OLLAMA_BASE_URL=https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
 OLLAMA_MODEL=llama3.2
 FRIDAY_MODEL=ollama/llama3.2
 FRIDAY_FALLBACK_MODELS=

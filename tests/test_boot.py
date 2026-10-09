@@ -48,3 +48,53 @@ def test_ollama_reachable_false_on_connection_error(monkeypatch):
     reachable, detail = friday._ollama_reachable()
     assert reachable is False
     assert detail == "ConnectionError"
+
+
+def test_served_models_reads_both_endpoint_shapes(monkeypatch):
+    """Ollama's native /api/tags list and the OpenAI-compatible /v1/models list
+    use different keys, and FRIDAY's config may point at either."""
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+
+    class R:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._p = payload
+
+        def json(self):
+            return self._p
+
+    seen = []
+
+    def fake_get(url, timeout=None):
+        seen.append(url)
+        return R({"data": [{"id": "llama3.2:latest"}]})
+
+    monkeypatch.setattr("requests.get", fake_get)
+    assert friday._ollama_served_models() == (["llama3.2:latest"], "")
+    assert seen == ["http://127.0.0.1:11434/v1/models"]
+
+    monkeypatch.setattr(
+        "requests.get", lambda url, timeout=None: R({"models": [{"name": "qwen2.5:3b"}]})
+    )
+    assert friday._ollama_served_models() == (["qwen2.5:3b"], "")
+
+    monkeypatch.setattr(
+        "requests.get",
+        lambda url, timeout=None: (_ for _ in ()).throw(ConnectionError()),
+    )
+    assert friday._ollama_served_models() == ([], "ConnectionError")
+
+
+def test_served_models_reports_http_errors_without_raising(monkeypatch):
+    """A probe that raises would take the doctor down with it."""
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+
+    class R:
+        status_code = 401
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr("requests.get", lambda url, timeout=None: R())
+    assert friday._ollama_served_models() == ([], "HTTP 401")

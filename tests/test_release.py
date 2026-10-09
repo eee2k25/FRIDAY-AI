@@ -199,3 +199,113 @@ def test_cli_doctor_flags_a_missing_provider():
     )
     assert result.returncode == 1, result.stdout
     assert "no usable model provider" in result.stdout
+
+
+# ------------------------------------------------- Codespace model server ---
+OLLAMA_SH = ROOT / "deploy" / "codespaces" / "ollama-server.sh"
+DEVCONTAINER_JSON = ROOT / ".devcontainer" / "devcontainer.json"
+OLLAMA_HOOK = ROOT / ".devcontainer" / "start-ollama.sh"
+
+
+def _bash_ok(script: Path) -> None:
+    result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_ollama_server_script_parses():
+    _bash_ok(OLLAMA_SH)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_ollama_start_hook_parses():
+    _bash_ok(OLLAMA_HOOK)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_ollama_server_script_is_executable():
+    import os
+
+    assert os.access(OLLAMA_SH, os.X_OK), "ollama-server.sh must keep its executable bit"
+
+
+def test_ollama_server_script_supports_the_documented_subcommands():
+    """Every advertised subcommand must be a real label in the case block."""
+    lines = OLLAMA_SH.read_text(encoding="utf-8").splitlines()
+    labels: set[str] = set()
+    inside = False
+    for line in lines:
+        if line.startswith("case \"$cmd\" in"):
+            inside = True
+            continue
+        if inside:
+            if line.strip().startswith("esac"):
+                break
+            # Labels and bodies share a line: `start|up)  do_start ;;`
+            head = line.strip().split(")", 1)[0]
+            labels.update(part.strip() for part in head.split("|"))
+    for sub in (
+        "install", "start", "stop", "restart", "status", "logs", "pull", "test",
+        "url", "watch", "autostart", "wire", "help",
+    ):
+        assert sub in labels, f"ollama-server.sh lost '{sub}'"
+
+
+def test_ollama_server_script_binds_for_port_forwarding():
+    """A Codespace proxy can only reach a listener on 0.0.0.0."""
+    text = OLLAMA_SH.read_text(encoding="utf-8")
+    assert "0.0.0.0" in text
+    assert "OLLAMA_HOST" in text and "OLLAMA_MODELS" in text
+
+
+def test_devcontainer_starts_the_server_on_every_resume():
+    """postCreateCommand runs once; only postStartCommand survives a stop/start.
+
+    Without this the model server is dead on every second day of use, which is
+    the single most common "FRIDAY stopped working" report for Codespaces.
+    """
+    text = DEVCONTAINER_JSON.read_text(encoding="utf-8")
+    assert "postStartCommand" in text, "no boot hook — ollama serve will not come back"
+    assert "start-ollama.sh" in text
+    assert "11434" in text, "Ollama's port is not forwarded/labelled"
+
+
+def test_setup_sh_delegates_ollama_to_one_implementation():
+    """Two copies of the install logic is how a Codespace ends up half-set-up."""
+    text = (ROOT / "setup.sh").read_text(encoding="utf-8")
+    assert "ollama-server.sh" in text, "setup.sh no longer uses deploy/codespaces/ollama-server.sh"
+
+
+def test_env_example_declares_each_key_once():
+    """A duplicated key silently picks one value and hides the other.
+
+    .env.example carried three OLLAMA_BASE_URL lines at once — one of them a dead
+    Codespace URL — which made `cp .env.example .env` a coin flip.
+    """
+    import re as _re
+
+    keys = [
+        line.split("=", 1)[0]
+        for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+        if _re.match(r"^[A-Z][A-Z0-9_]*=", line)
+    ]
+    dupes = {k for k in keys if keys.count(k) > 1}
+    assert not dupes, f"duplicated active keys in .env.example: {sorted(dupes)}"
+
+
+def test_no_shipped_file_hardcodes_a_codespace_url():
+    """Forwarded URLs are per-Codespace; pasting one into git rots immediately."""
+    import re as _re
+
+    pattern = _re.compile(r"https://[a-z0-9][a-z0-9-]*-[0-9]+\.(?:preview\.)?app\.github\.dev")
+    checked = ["config.py", ".env.example", "README.md", "CODESPACES_GUIDE.md", "setup.sh",
+               ".devcontainer/devcontainer.json", "deploy/codespaces/ollama-server.sh"]
+    offenders = {}
+    for rel in checked:
+        path = ROOT / rel
+        if not path.exists():
+            continue
+        found = pattern.findall(path.read_text(encoding="utf-8"))
+        if found:
+            offenders[rel] = found
+    assert not offenders, f"Codespace-specific URLs committed in: {offenders}"

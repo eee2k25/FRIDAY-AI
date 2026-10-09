@@ -37,7 +37,7 @@ warn() { printf '    %s[!]%s %s\n' "$C_YELLOW" "$C_OFF" "$1"; }
 die()  { printf '    %s[x]%s %s\n' "$C_RED" "$C_OFF" "$1" >&2; exit 1; }
 
 usage() {
-    sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 0
 }
 
@@ -65,43 +65,35 @@ if [ "$UNINSTALL" -eq 1 ]; then
 fi
 
 # --------------------------------------------------------------- Ollama ----
+# One implementation of the Ollama lifecycle: deploy/codespaces/ollama-server.sh.
+# It owns the binary check, the "address already in use" case, the background
+# start, the model pull and the .env wiring — so a laptop, a plain Linux box and
+# a Codespace all end up with the same server, and a Codespace gets a resume
+# hook instead of a server that silently dies overnight.
+OLLAMA_SETUP="$FRIDAY_DIR/deploy/codespaces/ollama-server.sh"
+
 install_ollama() {
     step "Setting up Ollama (local model server)"
-    if command -v ollama >/dev/null 2>&1; then
-        ok "ollama already installed ($(command -v ollama))"
+    if [ -f "$OLLAMA_SETUP" ]; then
+        FRIDAY_OLLAMA_MODEL="$OLLAMA_MODEL" bash "$OLLAMA_SETUP" install
     else
-        command -v curl >/dev/null 2>&1 || die "curl is required to install Ollama"
-        curl -fsSL https://ollama.com/install.sh | sh
-        ok "ollama installed"
-    fi
-
-    # The server may already be running (a previous run, or the installer
-    # started it). Starting a second one fails with "address already in use",
-    # which is harmless — detect the live endpoint instead of guessing.
-    if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-        ok "ollama server already listening on 127.0.0.1:11434"
-    else
-        step "Starting 'ollama serve' in the background"
-        nohup ollama serve >/tmp/friday-ollama.log 2>&1 &
-        for _ in 1 2 3 4 5 6 7 8 9 10; do
-            sleep 1
-            curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
-        done
-        if curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-            ok "ollama server started (log: /tmp/friday-ollama.log)"
-        else
-            warn "ollama server did not answer — start it yourself with 'ollama serve'"
-            warn "log: /tmp/friday-ollama.log"
+        # Fallback for a checkout without the deploy/ tree (e.g. an unpacked
+        # release zip): the old inline path, server started in the foreground
+        # by whoever needs it.
+        warn "$OLLAMA_SETUP not found — falling back to the built-in installer"
+        command -v ollama >/dev/null 2>&1 || {
+            command -v curl >/dev/null 2>&1 || die "curl is required to install Ollama"
+            curl -fsSL https://ollama.com/install.sh | sh
+        }
+        ok "ollama $(command -v ollama)"
+        if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+            warn "start the server yourself:  ollama serve"
         fi
+        ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qxF "$OLLAMA_MODEL" \
+            || ollama pull "$OLLAMA_MODEL"
     fi
-
-    step "Pulling model '$OLLAMA_MODEL'"
-    if ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$OLLAMA_MODEL\|${OLLAMA_MODEL}:latest"; then
-        ok "$OLLAMA_MODEL already downloaded"
-    else
-        ollama pull "$OLLAMA_MODEL"
-        ok "$OLLAMA_MODEL downloaded"
-    fi
+    step "Ollama health"
+    bash "$OLLAMA_SETUP" status || true
 }
 
 if [ "$OLLAMA_ONLY" -eq 1 ]; then
