@@ -35,16 +35,29 @@ def _get(name: str, default: str | None = None) -> str | None:
     return val if val not in (None, "") else default
 
 
-def _get_csv(name: str, default: str) -> list[str]:
-    """Read a comma-separated setting, preserving an explicitly empty value.
+def _parse_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
-    Unlike `_get`, an empty string is meaningful here: it lets users turn off
-    the fallback chain with `GEMINI_FALLBACK_MODELS=`.
-    """
-    val = os.getenv(name)
-    if val is None:
-        val = default
-    return [item.strip() for item in val.split(",") if item.strip()]
+
+def _get_csv(name: str, default: str) -> list[str]:
+    """Read a comma-separated setting, preserving an explicitly empty value."""
+    value = os.getenv(name)
+    return _parse_csv(default if value is None else value)
+
+
+def _get_preferred(primary: str, legacy: str, default: str) -> str:
+    """Read a preferred setting, falling back only when it is absent."""
+    value = os.getenv(primary)
+    if value is not None:
+        return value.strip()
+    return _get(legacy, default) or default
+
+
+def _get_preferred_csv(primary: str, legacy: str, default: str) -> list[str]:
+    """Prefer the new CSV variable, even when explicitly set to an empty list."""
+    if primary in os.environ:
+        return _parse_csv(os.environ[primary])
+    return _get_csv(legacy, default)
 
 
 def _get_csv_first(*names_and_default: str) -> list[str]:
@@ -73,6 +86,12 @@ def _get_csv_first(*names_and_default: str) -> list[str]:
 #   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
+#   ollama/       → local Ollama         e.g. ollama/llama3.2
+OLLAMA_ENABLED = _get("OLLAMA_ENABLED", "True").strip().lower() in ("1", "true", "yes")
+OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+OLLAMA_MODEL = _get("OLLAMA_MODEL", "llama3.2")
+PRIMARY_MODEL = _get_preferred("FRIDAY_MODEL", "GEMINI_MODEL", "gemini-2.5-flash")
+FALLBACK_MODELS = _get_preferred_csv(
 #   ollama/       → Ollama (local/remote) e.g. ollama/llama3.2
 #   deepseek/     → DeepSeek             e.g. deepseek/deepseek-chat
 #   openai/       → any OpenAI-compatible host (see OPENAI_BASE_URL)

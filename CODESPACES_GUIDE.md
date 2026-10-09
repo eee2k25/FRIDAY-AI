@@ -14,6 +14,18 @@ terminal, and `127.0.0.1` means *that* machine — not your laptop.
 ## 2. First-run setup (once per Codespace)
 
 ```bash
+# 1. Create your .env only if there is no existing file, then edit it
+[ -f .env ] || cp .env.example .env
+nano .env
+# The example is local-only Ollama by default, so no provider API key is needed.
+# Save with Ctrl+O, Enter, Ctrl+X.
+
+# 2. Verify
+python selftest.py
+# Should say: RESULT: 35 passed, 0 failed
+
+# 3. Start the selected provider (for Ollama, follow the section below), then run FRIDAY
+python friday.py
 cd /workspaces/FRIDAY-AI
 
 # one-shot installer: venv + deps + .env + global `friday` command
@@ -68,6 +80,27 @@ Leaving the variable *unset* is different — it falls through to
 > and tries it last in the fallback chain. The `127.0.0.1` value above is only for
 > an Ollama server running **inside this Codespace**; keep it when you run it here.
 
+   ```bash
+   ollama pull llama3.2
+   ollama list
+   [ -f .env ] || cp .env.example .env
+   nano .env
+   ```
+
+   Use the exact model tag printed by `ollama list`. The local-only example
+   uses these values (no Gemini/Groq key is needed):
+
+   ```env
+   OLLAMA_ENABLED=True
+   OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+   OLLAMA_MODEL=llama3.2
+   FRIDAY_MODEL=ollama/llama3.2
+   FRIDAY_FALLBACK_MODELS=
+   ```
+
+4. Verify `http://127.0.0.1:11434/api/tags` responds, then run
+   `python friday.py` in that second terminal. The banner should show
+   `Model: ollama/llama3.2` and `Fallbacks: 0`. Try `hi`.
 ### Option B — cloud API keys
 
 Put keys in `.env` (or in repo **Settings → Secrets and variables → Codespaces**,
@@ -122,6 +155,13 @@ ollama list                    # which local models are installed
 curl http://127.0.0.1:11434/api/tags   # is the Ollama server up?
 ```
 
+## Optional cloud-provider secrets
+Only create these Codespaces secrets if you choose to add a cloud provider as a
+fallback. Ollama-only setup does not need them.
+
+In GitHub: Repo `Settings` -> `Secrets and variables` -> `Codespaces` -> `New repository secret`
+- Name: `GEMINI_API_KEY` Value: your key
+- Name: `GROQ_API_KEY` Value: your key
 ## Export your work
 
 ```bash

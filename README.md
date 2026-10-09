@@ -18,8 +18,8 @@ exists — file written, report created — not until she gets stuck.
 
 | Layer      | Implementation                                              |
 |------------|-------------------------------------------------------------|
-| Primary LLM| Gemini 2.5 Flash (`google-genai` SDK — the official successor, streaming) |
-| Fallbacks  | Gemini, Groq, OpenRouter, Together, OpenAI, or local Ollama (auto-switch on API errors) |
+| Primary LLM| Configured with `FRIDAY_MODEL`; the local-only example uses Ollama |
+| Fallbacks  | Optional Gemini, Groq, OpenRouter, Together, OpenAI, or Ollama chain |
 | Agent loop | ReAct with native function calling, max 15 iterations       |
 | Memory     | SQLite (`memory/friday_memory.db`) — conversations, facts, tasks, tool usage |
 | Console    | Rich — streaming output, tool-call styling, Markdown reports |
@@ -27,16 +27,11 @@ exists — file written, report created — not until she gets stuck.
 | Docs       | python-docx (Word) · openpyxl (Excel) · pdfplumber/PyPDF2 (PDF) |
 | Math       | AST-safe calculator + sympy (equations) + pint (units)      |
 
-> **Model-name note (refinement):** Google has delisted `gemini-2.0-flash-exp`
-> and `gemini-1.5-flash`. The defaults in `config.py` keep the original spec
-> intact, but you almost certainly want to set current names in `.env`:
->
-> ```
-> GEMINI_MODEL=gemini-2.5-flash
-> GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile
-> ```
->
-> Or switch at runtime with the `model <name>` console command.
+> **Model configuration:** `FRIDAY_MODEL` and `FRIDAY_FALLBACK_MODELS` are
+> preferred. Existing `.env` files can keep using `GEMINI_MODEL` and
+> `GEMINI_FALLBACK_MODELS`; those names are read when their `FRIDAY_*` counterpart
+> is absent. For a local-only Ollama setup, use the configuration below and keep
+> the fallback list empty.
 
 ---
 
@@ -73,7 +68,7 @@ admin permission **once**, at setup, and then does everything itself:
 | Step | What setup does automatically |
 |---|---|
 | 🐍 Python | finds Python 3.10+ (installs it via winget if missing), creates `.venv`, installs all requirements |
-| 🔑 Keys | creates `.env` from `.env.example` and prompts for your `GEMINI_API_KEY` |
+| 🔑 Keys | creates `.env` from `.env.example`; the Gemini key prompt is optional (press Enter when using Ollama) |
 | ⌨️ `friday` command | installs a global launcher on your PATH — open **any** PowerShell/CMD window, type `friday`, she starts |
 | 🛡️ Admin access | registers her scheduled tasks with **highest privileges** — approved once at setup, no UAC prompts ever again |
 | 🔁 Always-on | "FRIDAY AI" task starts the daemon at every logon |
@@ -127,12 +122,10 @@ pip install -r requirements.txt
 # Step 5 — directories (friday.py also creates them automatically)
 New-Item -ItemType Directory -Force -Path "core","tools","memory","logs"
 
-# Step 6 — API keys
+# Step 6 — provider settings (Ollama needs no API key)
 Copy-Item .env.example .env
 notepad .env
-# (or, if you already have .env — add any missing keys, then:)
-#   GEMINI_MODEL=gemini-2.5-flash
-#   GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,groq/llama-3.3-70b-versatile
+# Cloud provider keys are optional; configure only providers you use.
 
 # Step 7 — run
 python friday.py
@@ -142,14 +135,11 @@ Or just double-click **`friday.bat`**.
 
 </details>
 
-### API keys needed
-- **`GEMINI_API_KEY`** — required for Gemini models
-- **`GROQ_API_KEY`** — recommended (fallback if Gemini rate-limits)
-- **No API key is required for Ollama** (`ollama/<model>`), but the Ollama service must be reachable
-- The rest (`OPENROUTER`, `TOGETHER`, `HUGGINGFACE`) are reserved for future modules (JARVIS / EDITH)
 ### Provider credentials
-- Cloud providers need their own key only when you select them (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `TOGETHER_API_KEY`, or `OPENAI_API_KEY`).
-- **Ollama needs no external API key**. Run an Ollama server and select a local model as described below.
+Cloud-provider credentials are optional and needed only when selecting those
+providers (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`,
+`TOGETHER_API_KEY`, or `OPENAI_API_KEY`). **Ollama does not need
+`GEMINI_API_KEY` or `GROQ_API_KEY` (or any external API key).**
 
 ---
 
@@ -294,7 +284,7 @@ C:\MARVEL\FRIDAY\
 
 ```bash
 pip install -e ".[dev]"
-pytest              # 302 tests, no API keys and no network needed
+pytest              # 321 tests, no API keys and no network needed
 ruff check .        # lint
 ```
 
@@ -305,6 +295,8 @@ CI runs both on every push across Python 3.10 / 3.11 / 3.12
 
 ## Model providers
 
+Models can use these prefixes. Cloud providers with no configured key are
+skipped; Ollama is keyless and can be enabled/disabled with `OLLAMA_ENABLED`.
 Any model in the chain may carry a provider prefix; cloud models whose API key
 is missing are silently skipped, so you can list more than you have keys for.
 Local Ollama models do not need a key.
@@ -312,6 +304,10 @@ Local Ollama models do not need a key.
 | Prefix | Provider | Example |
 |---|---|---|
 | *(none)* | Google Gemini | `gemini-2.5-flash` |
+| `ollama/` | Local or reachable Ollama | `ollama/llama3.2` |
+| `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
+| `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
+| `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | `ollama/` | Ollama (OpenAI-compatible local/remote endpoint) | `ollama/llama3.2`, `ollama/qwen2.5:7b` |
 | `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
 | `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
@@ -319,26 +315,74 @@ Local Ollama models do not need a key.
 | `deepseek/` | DeepSeek | `deepseek/deepseek-chat` |
 | `openai/` | OpenAI-compatible endpoint | `openai/gpt-4.1-mini` |
 
-Cloud-provider example:
+`FRIDAY_MODEL` takes precedence over legacy `GEMINI_MODEL`. Likewise,
+`FRIDAY_FALLBACK_MODELS` takes precedence over `GEMINI_FALLBACK_MODELS`—even
+when it is explicitly empty. External providers remain available as optional
+fallbacks, but the local-only configuration below does not activate them.
+
+To opt into cloud fallbacks, configure the credentials for the providers you
+want and list their models in `FRIDAY_FALLBACK_MODELS`, for example:
 
 ```env
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_FALLBACK_MODELS=groq/llama-3.3-70b-versatile,openrouter/meta-llama/llama-3.3-70b-instruct
+FRIDAY_FALLBACK_MODELS=gemini-2.5-flash,groq/llama-3.3-70b-versatile
 ```
 
+You can also add `openrouter/...`, `together/...`, or `openai/...` models using
+the provider prefixes above. Leaving this setting empty preserves the
+local-only chain.
 ### Ollama setup (local or remote)
 
-Install and start [Ollama](https://ollama.com/download), then pull a model. On
-Windows PowerShell, open one terminal for the server and another for FRIDAY:
+### Local-only setup with Ollama
 
-```powershell
-ollama serve
-```
+1. Install [Ollama](https://ollama.com/download) on the machine/container that
+   will run the Ollama server.
+2. Start the server in one terminal and leave it running:
 
-```powershell
-ollama pull llama3.2
-```
+   ```bash
+   ollama serve
+   ```
 
+3. In another terminal, download and inspect a model:
+
+   ```bash
+   ollama pull llama3.2
+   ollama list
+   ```
+
+   Use the exact model name/tag shown by `ollama list`. For example, to use
+   DeepSeek R1 instead, run `ollama pull deepseek-r1:7b` and set the model
+   values below to `deepseek-r1:7b`.
+4. Check the server's native API at `http://127.0.0.1:11434/api/tags`:
+
+   ```bash
+   curl http://127.0.0.1:11434/api/tags
+   ```
+
+5. Set `.env` to the local-only configuration (leave cloud API keys blank or
+   commented):
+
+   ```env
+   OLLAMA_ENABLED=True
+   OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+   OLLAMA_MODEL=llama3.2
+   FRIDAY_MODEL=ollama/llama3.2
+   FRIDAY_FALLBACK_MODELS=
+   ```
+
+   The matching OpenAI-compatible chat endpoint is
+   `http://127.0.0.1:11434/v1/chat/completions`. `OLLAMA_MODEL` is the default
+   model shorthand; the model after `ollama/` is what FRIDAY sends to Ollama.
+   Ollama streams text and tool calls through this endpoint, so the normal
+   FRIDAY tools remain available.
+6. Start FRIDAY with `python friday.py`. The startup banner should show
+   `Model: ollama/llama3.2` and `Fallbacks: 0`.
+
+No Gemini or Groq key is needed in this configuration. If FRIDAY and Ollama
+run in different machines, containers, or Codespaces, `127.0.0.1` points to
+FRIDAY's environment, not Ollama's. Set `OLLAMA_BASE_URL` to the Ollama server's
+reachable network address, including `/v1` (for example,
+`http://<reachable-host>:11434/v1`). Avoid exposing the Ollama port publicly;
+prefer a private/shared network or run both processes in the same Codespace.
 **v1.8 ships with the team Ollama endpoint as its default**:
 
 ```env
@@ -528,6 +572,12 @@ loop end-to-end using a mock LLM.
 
 | Symptom | Fix |
 |---|---|
+| `No usable model configured` banner | Add the selected cloud provider's key, or set `FRIDAY_MODEL=ollama/llama3.2` and enable Ollama |
+| Ollama connection refused | Start `ollama serve`; check `OLLAMA_BASE_URL` and confirm `/api/tags` responds from FRIDAY's environment |
+| Ollama model not found | Run `ollama list`, then `ollama pull <model>` using the exact model tag configured after `ollama/` |
+| HTTP 413 / prompt too large | This is an oversized request, not an ordinary rate limit. FRIDAY trims tool results/context before retrying; it does not retry the same oversized request unchanged |
+| `404 model not found` from Gemini | Set `FRIDAY_MODEL=gemini-2.5-flash` in `.env` (or legacy `GEMINI_MODEL`) |
+| Gemini rate limits | Fallback chain auto-switches if you configured a fallback; add `GROQ_API_KEY` only if you intend to use Groq |
 | `No usable model configured` banner | Add the selected cloud provider's key, or set `FRIDAY_MODEL=ollama/llama3.2` and start Ollama |
 | Ollama connection refused | Start `ollama serve` in the same environment as FRIDAY; verify `OLLAMA_BASE_URL` points to its `/v1` endpoint |
 | `404 model not found` from Gemini | Set `FRIDAY_MODEL=gemini-2.5-flash` in `.env` (delisted model name) |
