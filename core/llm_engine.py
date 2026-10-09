@@ -141,6 +141,7 @@ class LLMEngine:
                 continue
             if self._requires_api_key(provider) and not self._key_for(provider):
                 config.logger.debug("skipping %s — no API key for provider %s", m, provider)
+                continue
             if not self._provider_is_ready(provider):
                 config.logger.debug(
                     "skipping %s — provider %s is not configured/enabled", m, provider
@@ -207,10 +208,6 @@ class LLMEngine:
                 )
             else:
                 msg += " For example, set FRIDAY_MODEL=ollama/llama3.2 and OLLAMA_ENABLED=True in .env."
-                msg += (
-                    " For example, set GEMINI_MODEL=ollama/llama3.2 in .env"
-                    " with OLLAMA_ENABLED=True."
-                )
             raise LLMError(msg)
         errors: list[str] = []
         attempts = 0
@@ -543,11 +540,24 @@ class LLMEngine:
                     )
                 )
                 if too_large:
-                    raise LLMError(
-                        f"Ollama rejected an oversized request (HTTP {resp.status_code}) at "
-                        f"{config.OLLAMA_BASE_URL}; this is not an ordinary rate limit. "
-                        f"FRIDAY will trim the request before retrying. Response: {response_text[:300]}"
+                    # The request itself is too big — retrying it unchanged can
+                    # never succeed, so say so explicitly and let the agent loop
+                    # shrink the context (diet) instead of sleeping like a 429.
+                    message = (
+                        f"Ollama rejected the request as too large (HTTP {resp.status_code} "
+                        f"payload too large) at {config.OLLAMA_BASE_URL}. The prompt exceeds "
+                        f"the `{model_id}` context length — trim the conversation or switch "
+                        "to a model with a larger context window."
                     )
+                    if "rate_limit" in lowered or "rate limit" in lowered:
+                        # Some providers answer 413 with a body that says
+                        # 'rate_limit_exceeded' — name that explicitly so the error is
+                        # never mistaken for a transient rate limit and retried as-is.
+                        message += (
+                            " The server labelled it a rate limit, but this is an oversized "
+                            "request, not an ordinary rate limit."
+                        )
+                    raise LLMError(message + f" Response: {response_text[:300]}")
                 model_missing = (
                     resp.status_code == 404
                     or "model not found" in lowered
@@ -564,27 +574,6 @@ class LLMEngine:
                     f"Ollama HTTP {resp.status_code} at {config.OLLAMA_BASE_URL}. "
                     "Check that `ollama serve` is running and the configured URL is correct. "
                     f"Server response: {response_text[:300]}"
-                if resp.status_code == 404:
-                    raise LLMError(
-                        f"Ollama does not have the model `{model_id}` (HTTP 404) at "
-                        f"{config.OLLAMA_BASE_URL}. List what is installed with `ollama list`, "
-                        f"then fetch it with `ollama pull {model_id}`."
-                    )
-                if resp.status_code == 413:
-                    # The request itself is too big — retrying it unchanged can
-                    # never succeed, so say so explicitly (this is an oversized
-                    # request, NOT a rate limit) and let the agent loop shrink it.
-                    raise LLMError(
-                        f"Ollama rejected the request as too large (HTTP 413 payload too "
-                        f"large) at {config.OLLAMA_BASE_URL}. The prompt exceeds the "
-                        f"`{model_id}` context length — trim the conversation or switch to a "
-                        "model with a larger context window."
-                    )
-                raise LLMError(
-                    f"Ollama request failed (HTTP {resp.status_code}) at {config.OLLAMA_BASE_URL}. "
-                    "Check that `ollama serve` is running, the URL is correct, and the model is "
-                    f"available (`ollama list`, then `ollama pull {model_id}`). "
-                    f"Response: {resp.text[:300]}"
                 )
             if resp.status_code == 413:
                 raise LLMError(

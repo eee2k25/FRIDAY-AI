@@ -223,18 +223,6 @@ def _patch_post(monkeypatch, response, captured=None):
     monkeypatch.setattr(requests, "post", fake_post)
 
 
-@pytest.fixture()
-def ollama_engine(monkeypatch):
-    monkeypatch.setattr(config, "OLLAMA_ENABLED", True)
-    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
-    monkeypatch.setattr(config, "OLLAMA_MODEL", "llama3.2")
-    monkeypatch.setattr(config, "GEMINI_API_KEY", None)
-    monkeypatch.setattr(config, "GROQ_API_KEY", None)
-    monkeypatch.setattr(config, "PRIMARY_MODEL", "ollama/llama3.2")
-    monkeypatch.setattr(config, "FALLBACK_MODELS", [])
-    return LLMEngine("SYS")
-
-
 def test_ollama_compatible_stream_preserves_streaming_and_tool_calls(
     ollama_engine, monkeypatch
 ):
