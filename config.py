@@ -86,12 +86,6 @@ def _get_csv_first(*names_and_default: str) -> list[str]:
 #   groq/         → Groq                 e.g. groq/llama-3.3-70b-versatile
 #   openrouter/   → OpenRouter           e.g. openrouter/meta-llama/llama-3.3-70b-instruct
 #   together/     → Together AI          e.g. together/meta-llama/Llama-3.3-70B-Instruct-Turbo
-#   ollama/       → local Ollama         e.g. ollama/llama3.2
-OLLAMA_ENABLED = _get("OLLAMA_ENABLED", "True").strip().lower() in ("1", "true", "yes")
-OLLAMA_BASE_URL = _get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
-OLLAMA_MODEL = _get("OLLAMA_MODEL", "llama3.2")
-PRIMARY_MODEL = _get_preferred("FRIDAY_MODEL", "GEMINI_MODEL", "gemini-2.5-flash")
-FALLBACK_MODELS = _get_preferred_csv(
 #   ollama/       → Ollama (local/remote) e.g. ollama/llama3.2
 #   deepseek/     → DeepSeek             e.g. deepseek/deepseek-chat
 #   openai/       → any OpenAI-compatible host (see OPENAI_BASE_URL)
