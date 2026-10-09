@@ -54,6 +54,8 @@ def test_chat_without_available_providers_raises(monkeypatch):
     monkeypatch.setattr(config, "GROQ_API_KEY", None)
     monkeypatch.setattr(config, "PRIMARY_MODEL", "gemini-2.5-flash")
     monkeypatch.setattr(config, "FALLBACK_MODELS", [])
+    # Ollama is keyless and sits in the default fallback chain, so disable it
+    # explicitly: this test is about cloud providers without keys.
     monkeypatch.setattr(config, "OLLAMA_ENABLED", False)
     with pytest.raises(LLMError):
         list(LLMEngine().chat([{"role": "user", "content": "hi"}], []))

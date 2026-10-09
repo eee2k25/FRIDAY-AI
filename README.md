@@ -1,4 +1,4 @@
-# ⚡ F.R.I.D.A.Y. — v1.5
+# ⚡ F.R.I.D.A.Y. — v1.8
 
 **Female Replacement Intelligent Digital Agent With Yoga**
 
@@ -32,6 +32,31 @@ exists — file written, report created — not until she gets stuck.
 > `GEMINI_FALLBACK_MODELS`; those names are read when their `FRIDAY_*` counterpart
 > is absent. For a local-only Ollama setup, use the configuration below and keep
 > the fallback list empty.
+
+---
+
+## Setup (Linux / macOS / Codespaces) — one command
+
+```bash
+./setup.sh                    # venv + deps + .env + global `friday` command
+./setup.sh --with-ollama      # also install Ollama and pull llama3.2 (no API key needed)
+python friday.py --doctor     # verify the install before trusting it
+```
+
+No admin rights are used: everything lands in the checkout plus `~/.local/bin`.
+If that directory is not on your `PATH`, the installer prints the exact
+`export PATH=...` line to add. In a Codespace this runs automatically via the
+devcontainer.
+
+| Command | What it does |
+|---|---|
+| `friday` | start her from any directory |
+| `python friday.py --doctor` | report Python, `.env`, active model, Ollama reachability, tool count |
+| `python friday.py --version` | print the version |
+| `./setup.sh --ollama-only` | (re)start Ollama after a Codespace restart |
+| `./setup.sh --uninstall` | remove the global `friday` command |
+
+> The command is lowercase `friday`. `FRIDAY` will not be found.
 
 ---
 
@@ -130,6 +155,8 @@ providers (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`,
 | `research_tools` | deep_research (depth 1–3, concurrent fetch) · research_and_write_report · summarize_document · compare_sources |
 | `math_tools` | calculate · unit_convert · solve_equation |
 | `memory_tools` | save_fact · recall_fact · list_facts · search_memory |
+| `channel_tools` | send_telegram · send_slack · send_imessage (relay webhook) |
+| `productivity_tools` | create_calendar_event (ICS) · send_email (SMTP, only when configured) |
 
 Every tool self-registers on import via `ToolRegistry.auto_discover()` and
 returns a **string** (the LLM reads strings). Tool failures never kill the
@@ -270,6 +297,9 @@ CI runs both on every push across Python 3.10 / 3.11 / 3.12
 
 Models can use these prefixes. Cloud providers with no configured key are
 skipped; Ollama is keyless and can be enabled/disabled with `OLLAMA_ENABLED`.
+Any model in the chain may carry a provider prefix; cloud models whose API key
+is missing are silently skipped, so you can list more than you have keys for.
+Local Ollama models do not need a key.
 
 | Prefix | Provider | Example |
 |---|---|---|
@@ -278,6 +308,11 @@ skipped; Ollama is keyless and can be enabled/disabled with `OLLAMA_ENABLED`.
 | `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
 | `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
 | `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| `ollama/` | Ollama (OpenAI-compatible local/remote endpoint) | `ollama/llama3.2`, `ollama/qwen2.5:7b` |
+| `groq/` | Groq | `groq/llama-3.3-70b-versatile` |
+| `openrouter/` | OpenRouter | `openrouter/meta-llama/llama-3.3-70b-instruct` |
+| `together/` | Together AI | `together/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| `deepseek/` | DeepSeek | `deepseek/deepseek-chat` |
 | `openai/` | OpenAI-compatible endpoint | `openai/gpt-4.1-mini` |
 
 `FRIDAY_MODEL` takes precedence over legacy `GEMINI_MODEL`. Likewise,
@@ -295,6 +330,7 @@ FRIDAY_FALLBACK_MODELS=gemini-2.5-flash,groq/llama-3.3-70b-versatile
 You can also add `openrouter/...`, `together/...`, or `openai/...` models using
 the provider prefixes above. Leaving this setting empty preserves the
 local-only chain.
+### Ollama setup (local or remote)
 
 ### Local-only setup with Ollama
 
@@ -347,6 +383,51 @@ FRIDAY's environment, not Ollama's. Set `OLLAMA_BASE_URL` to the Ollama server's
 reachable network address, including `/v1` (for example,
 `http://<reachable-host>:11434/v1`). Avoid exposing the Ollama port publicly;
 prefer a private/shared network or run both processes in the same Codespace.
+**v1.8 ships with the team Ollama endpoint as its default**:
+
+```env
+OLLAMA_BASE_URL=https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1
+```
+
+Ollama is keyless and is the **last** model in the default fallback chain
+(`gemini-2.5-flash` → `gemini-2.5-flash-lite` → `groq/llama-3.3-70b-versatile` →
+`ollama`), so cloud models are still tried first. To make it the primary model,
+or to use your own server, set these in `.env` (remove the cloud fallbacks if you
+want every request to stay on Ollama):
+
+```env
+OLLAMA_ENABLED=True
+OLLAMA_BASE_URL=https://turbo-space-palm-tree-7v6jr5qx5gq4fwxrg-11434.app.github.dev/v1
+OLLAMA_MODEL=llama3.2
+FRIDAY_MODEL=ollama/llama3.2
+FRIDAY_FALLBACK_MODELS=
+```
+
+Check which models the endpoint serves with
+`curl <OLLAMA_BASE_URL>/models`, then set `OLLAMA_MODEL` to one of them.
+
+`FRIDAY_MODEL` / `FRIDAY_FALLBACK_MODELS` are provider-neutral and override the
+legacy `GEMINI_MODEL` / `GEMINI_FALLBACK_MODELS` names, which still work if you
+would rather not touch an existing `.env`. An *explicitly empty*
+`FRIDAY_FALLBACK_MODELS=` turns the fallback chain off; leaving the variable
+unset falls through to `GEMINI_FALLBACK_MODELS` and then to the built-in
+defaults.
+
+Health checks:
+- Native API: `http://<host>:11434/api/tags`
+- OpenAI-compatible endpoint used by FRIDAY:
+  `http://<host>:11434/v1/chat/completions`
+
+Important deployment caveat: if Ollama runs in a different Codespace/container
+from FRIDAY, `127.0.0.1` points to FRIDAY's own environment. Use a network-
+reachable host/port (forwarded URL, shared container network, or run both in
+the same environment).
+
+Start FRIDAY with `python friday.py`. You should see `Model: ollama/llama3.2`
+and `Fallbacks: 0`. The short form `FRIDAY_MODEL=ollama` uses `OLLAMA_MODEL`.
+Ollama's OpenAI-compatible endpoint streams text and tool calls, so FRIDAY's
+normal tools remain available. Tagged models work unchanged —
+`ollama/deepseek-r1:7b`, `ollama/qwen2.5:7b`.
 
 ---
 
@@ -497,5 +578,11 @@ loop end-to-end using a mock LLM.
 | HTTP 413 / prompt too large | This is an oversized request, not an ordinary rate limit. FRIDAY trims tool results/context before retrying; it does not retry the same oversized request unchanged |
 | `404 model not found` from Gemini | Set `FRIDAY_MODEL=gemini-2.5-flash` in `.env` (or legacy `GEMINI_MODEL`) |
 | Gemini rate limits | Fallback chain auto-switches if you configured a fallback; add `GROQ_API_KEY` only if you intend to use Groq |
+| `No usable model configured` banner | Add the selected cloud provider's key, or set `FRIDAY_MODEL=ollama/llama3.2` and start Ollama |
+| Ollama connection refused | Start `ollama serve` in the same environment as FRIDAY; verify `OLLAMA_BASE_URL` points to its `/v1` endpoint |
+| `404 model not found` from Gemini | Set `FRIDAY_MODEL=gemini-2.5-flash` in `.env` (delisted model name) |
+| Gemini rate limits | Fallback chain auto-switches; add `GROQ_API_KEY` for resilience |
+| Ollama provider fails / unreachable | Verify `ollama serve` is running, `OLLAMA_BASE_URL` is reachable from FRIDAY, and pull the model with `ollama pull <model>` |
+| `413 … tokens per minute (TPM)` from Groq | Your Groq org is on the **on-demand tier (8k TPM)**. FRIDAY auto-trims the context and retries; for heavy work, stay on Gemini or upgrade Groq to Dev tier |
 | `pip install ddgs` on Python 3.13 | Use `ddgs` (not `duckduckgo-search`, which is 3.12-only/deprecated) |
 | Tool module warning at startup | `logs/friday.log` says which package is missing — `pip install -r requirements.txt` |

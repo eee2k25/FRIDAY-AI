@@ -34,15 +34,14 @@ class LLMEngine:
         self._groq_client = None
         self._gemini_client = None
         if not self._chain:
+            config.logger.error(
+                "No usable model providers in .env — configure an API key "
+                "(Gemini/Groq/OpenRouter/Together/OpenAI) or enable Ollama"
+            )
             if self._sdk_skipped:
                 config.logger.error(
                     "Provider SDK(s) missing for: %s — run: pip install -r requirements.txt",
                     ", ".join(self._sdk_skipped),
-                )
-            else:
-                config.logger.error(
-                    "No usable model providers configured — add a provider API key or "
-                    "select a local model such as ollama/llama3.2"
                 )
 
     # --------------------------------------------------- chain mgmt ---
@@ -68,6 +67,7 @@ class LLMEngine:
             ("openrouter/", "openrouter"),
             ("together/", "together"),
             ("openai/", "openai"),
+            ("deepseek/", "deepseek"),
         ):
             if low.startswith(prefix):
                 return provider
@@ -75,18 +75,32 @@ class LLMEngine:
 
     @staticmethod
     def _key_for(provider: str) -> str | None:
+        """API credential for a provider.
+
+        Ollama is a local service and has no credential — it is gated by
+        `OLLAMA_ENABLED` in `_provider_is_ready` instead, so this never
+        invents a fake key that would be sent as a bogus Authorization header.
+        """
         return {
             "gemini": config.GEMINI_API_KEY,
             "groq": config.GROQ_API_KEY,
             "openrouter": config.OPENROUTER_API_KEY,
             "together": config.TOGETHER_API_KEY,
             "openai": config.OPENAI_API_KEY,
+            "deepseek": config.DEEPSEEK_API_KEY,
         }.get(provider)
 
     @staticmethod
     def _requires_api_key(provider: str) -> bool:
         """Ollama is a local service and does not require an API credential."""
         return provider != "ollama"
+
+    @classmethod
+    def _provider_is_ready(cls, provider: str) -> bool:
+        """Can this provider serve requests: keyed (or keyless Ollama, when enabled)?"""
+        if provider == "ollama":
+            return bool(config.OLLAMA_ENABLED)
+        return bool(cls._key_for(provider))
 
     @staticmethod
     def _sdk_available(provider: str) -> bool:
@@ -127,6 +141,10 @@ class LLMEngine:
                 continue
             if self._requires_api_key(provider) and not self._key_for(provider):
                 config.logger.debug("skipping %s — no API key for provider %s", m, provider)
+            if not self._provider_is_ready(provider):
+                config.logger.debug(
+                    "skipping %s — provider %s is not configured/enabled", m, provider
+                )
                 continue
             if not self._sdk_available(provider):
                 config.logger.warning(
@@ -189,6 +207,10 @@ class LLMEngine:
                 )
             else:
                 msg += " For example, set FRIDAY_MODEL=ollama/llama3.2 and OLLAMA_ENABLED=True in .env."
+                msg += (
+                    " For example, set GEMINI_MODEL=ollama/llama3.2 in .env"
+                    " with OLLAMA_ENABLED=True."
+                )
             raise LLMError(msg)
         errors: list[str] = []
         attempts = 0
@@ -433,6 +455,7 @@ class LLMEngine:
     OPENAI_COMPATIBLE_ENDPOINTS = {
         "openrouter": "https://openrouter.ai/api/v1/chat/completions",
         "together": "https://api.together.xyz/v1/chat/completions",
+        "deepseek": "https://api.deepseek.com/v1/chat/completions",
         "openai": f"{config.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
         "ollama": f"{config.OLLAMA_BASE_URL.rstrip('/')}/chat/completions",
     }
@@ -476,9 +499,11 @@ class LLMEngine:
         if provider == "ollama" and (model_name.lower() == "ollama" or not model_id):
             model_id = config.OLLAMA_MODEL
         headers = {"Content-Type": "application/json"}
-        api_key = self._key_for(provider)
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        # Ollama is local and keyless — never send it an Authorization header.
+        if provider != "ollama":
+            api_key = self._key_for(provider)
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
         if provider == "openrouter":
             headers["X-Title"] = "FRIDAY"
         payload = {
@@ -539,6 +564,32 @@ class LLMEngine:
                     f"Ollama HTTP {resp.status_code} at {config.OLLAMA_BASE_URL}. "
                     "Check that `ollama serve` is running and the configured URL is correct. "
                     f"Server response: {response_text[:300]}"
+                if resp.status_code == 404:
+                    raise LLMError(
+                        f"Ollama does not have the model `{model_id}` (HTTP 404) at "
+                        f"{config.OLLAMA_BASE_URL}. List what is installed with `ollama list`, "
+                        f"then fetch it with `ollama pull {model_id}`."
+                    )
+                if resp.status_code == 413:
+                    # The request itself is too big — retrying it unchanged can
+                    # never succeed, so say so explicitly (this is an oversized
+                    # request, NOT a rate limit) and let the agent loop shrink it.
+                    raise LLMError(
+                        f"Ollama rejected the request as too large (HTTP 413 payload too "
+                        f"large) at {config.OLLAMA_BASE_URL}. The prompt exceeds the "
+                        f"`{model_id}` context length — trim the conversation or switch to a "
+                        "model with a larger context window."
+                    )
+                raise LLMError(
+                    f"Ollama request failed (HTTP {resp.status_code}) at {config.OLLAMA_BASE_URL}. "
+                    "Check that `ollama serve` is running, the URL is correct, and the model is "
+                    f"available (`ollama list`, then `ollama pull {model_id}`). "
+                    f"Response: {resp.text[:300]}"
+                )
+            if resp.status_code == 413:
+                raise LLMError(
+                    f"{provider} rejected the request as too large (HTTP 413 payload too "
+                    f"large): {resp.text[:300]}"
                 )
             raise LLMError(f"{provider} HTTP {resp.status_code}: {response_text[:300]}")
 
